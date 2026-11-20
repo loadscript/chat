@@ -1,0 +1,235 @@
+// Client for the runtime provider endpoints (runtime/endpoint/provider/private).
+// The provider owns every credential server-side: clients are routed by their pinned
+// `model` id against the shared client registry (privateClients.find on client.id —
+// runtime/endpoint/provider/private/chat-completion/private-chat-completion.ts:47-51),
+// so the browser sends no API key and none is ever stored in the UI.
+//
+// WHERE THIS CLIENT BELONGS AFTER THE HARNESS REBUILD: ONLINE mode no longer
+// streams through it at all — an online turn is a harness `POST /sessions/{id}/
+// tasks` plus the `harness.v1` update stream (see ../api/harness.ts and
+// ../api/harness-stream.ts). This module is OFFLINE mode's streaming transport
+// (R3: browser-local conversations + a user-configured OpenAI-compatible base),
+// and its behavior is unchanged: the catalog GET, the SSE reader loop, the
+// `[DONE]`/usage frames and the mid-stream error frame all work exactly as they
+// did before the rebuild.
+import { isString } from '@presource/core';
+import type { ChatMessage, ConversationRecord } from './conversation';
+
+// The provider base OFFLINE mode suggests when the operator has configured
+// nothing yet: the private relay of the reference deployment, i.e. the value the
+// pre-rebuild `DEFAULT_PROVIDER_URL` carried (assembled from
+// `INFERENCE_PROVIDER_URL` in the now-removed `api/config.ts`, the LAN inference
+// host on the PROVIDER port). It is a SUGGESTION only — an offline base is user
+// configuration, and a blank base issues no request at all (see
+// plugins/source.ts's offline catalog guard). The online provider location is
+// server configuration now (`@underload/chat/src/server/config.ts`), never a browser default.
+export const DEFAULT_PROVIDER_URL = 'http://192.168.50.109:8800/providers/private/v1';
+
+// One entry of the OpenAI-compatible /models catalog; only `id` is consumed by the UI.
+export type ProviderModel = {
+    id: string;
+    object?: string;
+    created?: number;
+    owned_by?: string;
+    context_length?: number;
+};
+
+// Envelope returned by GET {provider}/models (see private/models/service-route.ts).
+export type ProviderModelsResponse = {
+    object: 'list';
+    data: ProviderModel[];
+};
+
+// Minimal assistant reply assembled from the streamed chat completion.
+export type ProviderChatCompletion = {
+    content: string;
+    usage?: ConversationRecord['usage'];
+};
+
+// One SSE `data:` frame of an OpenAI-compatible chat.completion.chunk as relayed by
+// runtime/endpoint/provider/private/chat-completion/private-chat-completion.ts
+// (`data: {json}\n\n` per chunk, `data: [DONE]\n\n` terminator). GPT clients add a
+// `reasoning_content` extension delta (ignored here) and a final usage chunk;
+// Makora/Modal pass raw SDK chunks through without a usage chunk.
+type ProviderStreamChunk = {
+    choices?: Array<{
+        delta?: { role?: unknown; content?: unknown };
+        finish_reason?: string | null;
+    }>;
+    usage?: ConversationRecord['usage'];
+    // Mid-stream failures arrive as a plain data frame from the server's catch-all
+    // (`data: {"error":{"message":"...","type":"stream_error"}}`, no trailing [DONE]).
+    error?: { message?: unknown; type?: string };
+};
+
+// Convert a base URL into one stable form without changing an absolute or relative origin.
+const normalizeBaseUrl = (baseUrl: string): string => baseUrl.replace(/\/+$/, '');
+
+// Read a server error body when available, while retaining a deterministic status fallback.
+const errorMessage = async (response: Response, fallback: string): Promise<string> => {
+    try {
+        const data = await response.json();
+        if (typeof data?.error === 'string' && data.error.length > 0) return data.error;
+    } catch {
+        // A non-JSON error response still receives the status-based fallback below.
+    }
+    return `${fallback} (HTTP ${response.status})`;
+};
+
+// GET {url} returns the OpenAI-compatible model catalog: the response
+// envelope ({object:'list', data:[...]}) is parsed once for every entry
+// below. Callers pass the FULL route URL — the base-URL entries derive the
+// standard routes (${base}/models, ${base}/chat/completions); a blank base
+// is caught by the UI (components/ChatAssistantApp.tsx) before any request,
+// so no silent call to the default app server can ever happen.
+const fetchModelsFromUrl = async (url: string): Promise<ProviderModel[]> => {
+    const response = await fetch(url.replace(/\/+$/, ''), { method: 'GET' });
+    if (!response.ok) {
+        throw new Error(await errorMessage(response, 'Failed to fetch provider models'));
+    }
+
+    const data = (await response.json()) as Partial<ProviderModelsResponse>;
+    if (!Array.isArray(data.data)) {
+        throw new Error('Provider models response did not include a data list');
+    }
+    return data.data;
+};
+
+// GET {base}/models returns every model the provider registry can serve;
+// routing keys come straight from each client's pinned model, so `id` is the
+// exact value that must be sent back as `model` in the chat completion
+// request. The SAME derivation serves both modes: the online private relay
+// base (providerUrl prop / DEFAULT_PROVIDER_URL) and the OFFLINE-mode
+// single provider base configured in Settings (AssistantSettings
+// .providerBase) — trailing slashes are normalized so the exact configured
+// example base (e.g. http://192.168.50.109:8800/providers/private/v1)
+// yields exactly `${base}/models`.
+export async function fetchProviderModels(baseUrl: string): Promise<ProviderModel[]> {
+    return fetchModelsFromUrl(`${normalizeBaseUrl(baseUrl)}/models`);
+}
+
+// Outgoing history is mapped to plain {role, content} messages: ChatMessage may
+// carry storage-only metadata (the per-message `model` attribution used to mark
+// which model produced each response — see chat-assistant.ts), and strict
+// OpenAI-compatible providers reject unknown fields on messages.
+const toProviderMessages = (messages: ChatMessage[]): Array<Pick<ChatMessage, 'role' | 'content'>> =>
+    messages.map(({ role, content }) => ({ role, content }));
+
+ // POST {url} with stream: true and the complete conversation history. The
+ // provider injects credentials itself (key rotation lives in the private
+ // model clients), so no Authorization header is ever set from the browser.
+ // `onSnapshot` receives the ACCUMULATED assistant text after every content
+ // delta so the caller can render live progress. Resolves at [DONE]/
+ // connection-close with the full content plus usage when the final chunk
+ // provided it. Errors: non-2xx rejects before streaming ("Model 'x' not
+ // found", failover 500); a mid-stream {"error":...} frame rejects with its
+ // message. The OpenAI-compatible payload is the single shared body for
+ // every mode (online relay base / offline configured base).
+const streamCompletionRequest = async (
+    url: string,
+    model: string,
+    messages: ChatMessage[],
+    onSnapshot: (content: string) => void,
+    // Optional abort signal (dashboard service layer): handed straight to fetch
+    // so a caller can cancel an in-flight completion. When omitted the request
+    // init is byte-identical to the pre-existing payload, so online and offline
+    // behavior is unchanged for every current caller.
+    signal?: AbortSignal
+): Promise<ProviderChatCompletion> => {
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        // OpenAI-compatible providers omit usage from streamed responses unless
+        // this explicit opt-in is present. Without it, the SSE parser correctly
+        // sees content but never receives a usage frame, so the conversation UI
+        // falls back to "Total tokens: 0" after every completed turn.
+        body: JSON.stringify({
+            model,
+            stream: true,
+            stream_options: { include_usage: true },
+            messages: toProviderMessages(messages)
+        }),
+        // Only present when the caller supplied a signal: an explicit
+        // `signal: undefined` would change the request-init shape every
+        // existing test asserts on exactly.
+        ...(signal ? { signal } : {})
+    });
+    if (!response.ok) {
+        throw new Error(await errorMessage(response, 'Provider chat completion failed'));
+    }
+    if (!response.body) {
+        throw new Error('Provider chat completion returned no stream body');
+    }
+
+    // Reader loop mirrors the readSSEResponse pattern in
+    // packages/agentic/harness/simple/modules/simple-client.ts: decode incrementally,
+    // split on newlines, and keep the partial tail so frames split across network
+    // chunks are reassembled before parsing.
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let content = '';
+    let usage: ConversationRecord['usage'] | undefined;
+    try {
+        for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() ?? '';
+            for (const raw of lines) {
+                const line = raw.trim();
+                // The producer emits only `data:` frames; blank separators are skipped.
+                if (!line.startsWith('data:')) continue;
+                const data = line.slice('data:'.length).trim();
+                if (data.length === 0 || data === '[DONE]') continue;
+                const parsed = JSON.parse(data) as ProviderStreamChunk;
+                // Server catch-all: stream aborted after it started (start.ts:301-310).
+                if (parsed.error) {
+                    const message = parsed.error.message;
+                    throw new Error(isString(message) && message.length > 0 ? message : 'Provider stream terminated');
+                }
+                const delta = parsed.choices?.[0]?.delta;
+                if (delta && isString(delta.content) && delta.content.length > 0) {
+                    content += delta.content;
+                    onSnapshot(content);
+                }
+                // GPT clients append a final empty-delta chunk carrying the turn's usage.
+                if (parsed.usage) usage = parsed.usage;
+            }
+        }
+    } catch (reason) {
+        // Abandon the SSE body so the connection is not left dangling on failures.
+        await reader.cancel().catch(() => undefined);
+        throw reason;
+    }
+
+    if (content.length === 0) {
+        throw new Error('Provider chat completion returned no text content');
+    }
+    return { content, ...(usage ? { usage } : {}) };
+}
+
+// Entry for BOTH modes (online behavior unchanged): the streaming completion
+// is POSTed to {base}/chat/completions of the base URL — the online private
+// relay base (DEFAULT_PROVIDER_URL / embedder providerUrl prop), or the
+// OFFLINE-mode single provider base configured in Settings
+// (AssistantSettings.providerBase). Trailing slashes are normalized, so the
+// exact configured example base yields exactly `${base}/chat/completions`,
+// paired with fetchProviderModels' `${base}/models`; a blank base is
+// surfaced by the UI (configuration explanation) and never falls back to a
+// default app server.
+export function streamProviderChatCompletion(
+    baseUrl: string,
+    model: string,
+    messages: ChatMessage[],
+    onSnapshot: (content: string) => void,
+    // Optional 5th argument: abort support for the dashboard service facade
+    // (src/dashboard/services/provider.ts). Every existing 4-argument caller
+    // (components/ChatAssistantApp.tsx) is untouched, and an aborted request
+    // still rejects — with the platform AbortError — through the same path as
+    // every other failure; interpreting the abort is the caller's job.
+    signal?: AbortSignal
+): Promise<ProviderChatCompletion> {
+    return streamCompletionRequest(`${normalizeBaseUrl(baseUrl)}/chat/completions`, model, messages, onSnapshot, signal);
+}

@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <!-- `viewport-fit=cover` is what makes the env(safe-area-inset-*) paddings the
+             phone skin applies to the one-line bar and the composer footer resolve to
+             real numbers; without it a notched device reports 0 and the chrome sits
+             under the clock and the home indicator (see
+             src/dashboard/styles/{base,composer}.css, `max-width: 899px`). -->
+        <meta
+            name="viewport"
+            content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+        />
+        <meta name="theme-color" content="#18272f" />
+        <meta name="description" content="Chat Assistant — an AI chat workspace." />
+        <title>Chat Assistant</title>
+        <style>
+            /* Document scaffolding ONLY ??? the workstation skin owns palette,
+               typography, form controls and scrollbars (see
+               src/dashboard/styles/{tokens,base}.css, scoped to `.station`).
+               Everything here is layout plumbing the React tree cannot supply
+               before it mounts. */
+            /* Height chain so a 100vh station and a 100% #root agree. */
+            html,
+            body,
+            #root {
+                height: 100%;
+            }
+            *,
+            *::before,
+            *::after {
+                box-sizing: border-box;
+            }
+            /* Both skins exist (ink dark, slate light) and the theme plugin reads
+               prefers-color-scheme, so the document hint stays dual. */
+            :root {
+                color-scheme: light dark;
+            }
+            body {
+                margin: 0;
+            }
+        </style>
+    </head>
+    <body>
+        <div id="root"></div>
+        <script type="module" src="/src/main.tsx"></script>
+    </body>
+</html>

@@ -16,9 +16,12 @@
     "files": [
         "src",
         "!src/**/*.test.ts",
-        "!src/**/*.spec.ts"
+        "!src/**/*.test.tsx",
+        "!src/**/*.spec.ts",
+        "!src/**/*.spec.tsx",
+        "!src/**/*.stories.tsx",
+        "!src/**/__snapshots__/**"
     ],
-    "sideEffects": false,
     "engines": {
         "node": ">=18"
     },
@@ -35,15 +38,37 @@
         "registry": "https://registry.npmjs.org"
     },
     "scripts": {
+        "dev": "vite --host",
+        "build": "vite build",
+        "preview": "vite preview",
         "test": "vitest run --passWithNoTests",
+        "test:watch": "vitest",
         "typecheck": "tsc --noEmit"
     },
     "author": "NQQT",
     "license": "ISC",
-    "dependencies": {},
+    "dependencies": {
+        "@loadscript/harness": "*",
+        "@presource/core": "*",
+        "@rightless/icons": "*",
+        "@underload/dashboard": "*",
+        "@underload/harness": "*",
+        "react": "^18.2.0",
+        "react-dom": "^18.2.0"
+    },
     "devDependencies": {
+        "@presource/react": "*",
+        "@presource/test": "*",
+        "@storybook/react": "^10.0.0",
+        "@testing-library/dom": "^10.4.1",
+        "@testing-library/react": "^16.3.2",
         "@types/node": "^25.9.1",
+        "@types/react": "^18.2.0",
+        "@types/react-dom": "^18.2.0",
+        "@vitejs/plugin-react": "^6.0.1",
+        "jsdom": "^29.0.2",
         "typescript": "^6.0.0",
+        "vite": "^8.0.8",
         "vitest": "^4.1.4"
     }
 }

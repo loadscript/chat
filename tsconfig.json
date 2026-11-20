@@ -7,7 +7,7 @@
         "module": "ESNext",
         "target": "ESNext",
         "moduleResolution": "bundler",
-        "jsx": "react",
+        "jsx": "react-jsx",
         "skipLibCheck": true,
         "allowJs": true,
         "experimentalDecorators": true,
@@ -17,6 +17,6 @@
         "lib": ["decorators", "dom", "es5", "scripthost", "es2015.collection"],
         "types": ["node", "vite/client", "vitest/globals"]
     },
-    "exclude": ["node_modules", "Temp", "**/*.test.ts", "**/dist/*", "**/lib/*"],
+    "exclude": ["node_modules", "Temp", "**/*.test.ts", "**/*.test.tsx", "**/dist/*", "**/lib/*"],
     "include": ["*.ts", "*.tsx", "**/*.ts", "**/*.tsx"]
 }

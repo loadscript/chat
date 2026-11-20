@@ -1,8 +1,8 @@
-# Typecheck and test the chat package.
+# Typecheck, test, and build the chat UI.
 #
-# The reusable harness UI (and its deployable build) lives in
-# `@loadscript/harness`. This package has no UI build of its own yet, so the
-# workflow validates the package instead of publishing an artifact.
+# The reusable harness client lives in `@loadscript/harness`; this package is the
+# chat application layer on top of it. The companion server lives in
+# `@underload/chat`.
 
 name: CI
 
@@ -36,3 +36,6 @@ jobs:
 
             - name: Test
               run: npm test
+
+            - name: Build UI
+              run: npm run build

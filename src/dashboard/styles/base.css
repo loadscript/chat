@@ -1,0 +1,600 @@
+/*
+ * Station shell structure and shared primitives — vendored and adapted from
+ * packages/underload/dashboard/example/src/styles/workstation.css.
+ *
+ * What changed and why (do not re-copy the example's region hack):
+ *   The example page scrolls the whole document and caps each region with
+ *   `max-height: calc(100vh - 190px)`, a magic number that only matches its own
+ *   bar + footer. This skin is VIEWPORT-LOCKED: `.station` is exactly 100vh and
+ *   `overflow: hidden`, the bar is an intrinsic row, and the three regions are the
+ *   only scroll containers (`min-height: 0` + `overflow-y: auto`). The window
+ *   never scrolls, which is what a chat transcript with a pinned composer needs.
+ *
+ * Scope discipline: every rule below is shell chrome or a shared primitive, and
+ * every one of them is .station-scoped (the primitives - .btn, .field, .chip,
+ * .panel and the two region owners below - carry the .station prefix too, so
+ * mounting this skin inside a host page restyles nothing outside the station).
+ * Feature rules (sessions, transcript, composer, agents, tools, settings,
+ * notices) belong in their own file in this folder.
+ */
+
+/* ——— Station frame ——————————————————————————————————————————————————————— */
+
+.station {
+    display: grid;
+    /* Row 1 is the bar (intrinsic), row 2 is the grid and takes the rest. */
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: var(--gap);
+    height: 100vh;
+    /* dvh keeps a mobile station inside the visual viewport once the browser
+       chrome shrinks it; the vh line above is the fallback. */
+    height: 100dvh;
+    /* The window never scrolls: only .station__region does. */
+    overflow: hidden;
+    padding: var(--gap);
+    border-radius: 0;
+    background: var(--surface);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+/* ——— Station bar ————————————————————————————————————————————————————————— */
+
+.station__bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 18px;
+    padding: var(--pad);
+    border: 1px solid var(--line);
+    border-left: var(--rail) solid var(--accent);
+    border-radius: var(--radius);
+    background: var(--raised);
+}
+
+.station__brand {
+    margin: 0;
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+/* The phone bar's one-line title (`layout.brand.compact`,
+ * WorkstationShell.tsx:184-196) is desktop-invisible. This is the ONLY reason the
+ * rule exists: it lives outside the media blocks so the >=900px bar renders the
+ * name exactly as before, and the 899px block below flips the pair. */
+.station__brand-compact {
+    display: none;
+}
+
+.station__tagline {
+    margin: 0;
+    color: var(--muted);
+    font-size: 12px;
+}
+
+.station__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-left: auto;
+}
+
+.station__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.station__note {
+    /* The footer note of the example becomes bar text here: a footer row would
+       steal height from the regions in a locked viewport. */
+    flex-basis: 100%;
+    margin: 0;
+    color: var(--muted);
+    font-size: 11px;
+    letter-spacing: 0.05em;
+}
+
+/* ——— Chips ——————————————————————————————————————————————————————————————— */
+
+.station .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 9px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--surface) 65%, transparent);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+}
+
+.station .chip__key {
+    color: var(--muted);
+    text-transform: uppercase;
+}
+
+.station .chip__value {
+    font-weight: 700;
+}
+
+.station .chip__ref {
+    color: var(--muted);
+}
+
+.station .chip--brand {
+    border-color: var(--accent);
+    color: var(--accent);
+    font-weight: 700;
+}
+
+/* ——— Region grid ————————————————————————————————————————————————————————— */
+
+.station__grid {
+    display: grid;
+    /* Rail, stage, inspector. minmax(0, 1fr) is what lets the stage shrink
+       instead of being pushed wider by a long transcript line. */
+    grid-template-columns: 250px minmax(0, 1fr) 300px;
+    gap: var(--gap);
+    align-items: stretch;
+    min-height: 0;
+}
+
+.station__region {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap);
+    min-width: 0;
+    /* min-height: 0 + overflow is the viewport-locked contract: this is one of
+       the only three scroll containers in the application. */
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+/* A region has exactly one owner (see pickRegionOwner in WorkstationShell.tsx),
+   so its child always fills the column and manages its own inner scrolling. */
+.station__region > * {
+    flex: 1 1 auto;
+}
+
+/* --- Region owners (the two composed columns) -------------------------------- */
+
+/* The stage column carries TWO surfaces: the transient notice strip stacked above
+   the log (components/ChatStageSlot.tsx). One contribution per region means the
+   region's single child is that wrapper, so the wrapper - not the region - is what
+   stacks them. `.stage` keeps its own scroll contract (transcript.css:40-46) and
+   the strip is intrinsic-height AND removable (NoticeStrip returns null on an
+   empty feed), so min-height:0 here is what lets the log shrink to the remaining
+   height instead of overflowing the viewport-locked region. */
+.station .stage-slot {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap);
+    min-height: 0;
+}
+
+/* `flex: 1 1 auto` from `.station__region > *` lands on the WRAPPER now, so the
+   log inside it has to be told to take whatever the strip leaves. Without this the
+   stage column sizes to its content and the composer drifts below the fold. */
+.station .stage-slot > .stage {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+/* The inspector column is the same shape: a wrapper whose one child is whichever
+   feature surface `chat.sidebarTab` selects (components/ChatInspector.tsx). The
+   feature keeps its own root (.agents / .tools / .settings / .panel) and this only
+   sizes the column, so a long registry scrolls inside the region instead of
+   pushing the composer off-screen. */
+.station .inspector {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap);
+    min-width: 0;
+    min-height: 0;
+}
+
+.station .inspector > * {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+/* The phone drawer's corner control (components/ChatInspector.tsx). A static
+   column needs no gate, so it never paints at or above the seam — the exact
+   shape `.rail__menu` uses (sessions.css:82-85); the 899px block below turns it
+   into the fixed top-right toggle. */
+.station .inspector__menu {
+    display: none;
+    padding: 4px;
+}
+
+/* ——— Panels (chrome for descriptor contributions) ——————————————————————— */
+
+.station .panel {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--raised);
+}
+
+.station .panel__head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px var(--pad);
+    border-bottom: 1px solid var(--line);
+}
+
+.station .panel__title {
+    margin: 0;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+}
+
+.station .panel__hint {
+    color: var(--muted);
+    font-size: 11px;
+}
+
+.station .panel__body {
+    padding: var(--pad);
+    min-height: 0;
+}
+
+.station .panel__empty {
+    margin: 0;
+    color: var(--muted);
+    font-size: 12px;
+}
+
+/* ——— Buttons ————————————————————————————————————————————————————————————— */
+
+.station .btn {
+    padding: 6px 12px;
+    min-height: var(--row-height);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    color: var(--text);
+    font: inherit;
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    transition: border-color 120ms ease, color 120ms ease, transform 120ms ease;
+}
+
+.station .btn:hover:not(:disabled) {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.station .btn:active:not(:disabled) {
+    transform: translateY(1px);
+}
+
+.station .btn:disabled {
+    color: var(--muted);
+    cursor: not-allowed;
+    opacity: 0.55;
+}
+
+.station .btn--accent {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+    color: var(--accent);
+}
+
+.station .btn--warn {
+    border-color: var(--warn);
+    background: color-mix(in srgb, var(--warn) 14%, var(--surface));
+    color: var(--warn);
+}
+
+.station .btn--danger {
+    border-color: var(--danger);
+    background: color-mix(in srgb, var(--danger) 12%, var(--surface));
+    color: var(--danger);
+}
+
+.station .btn--ghost {
+    background: transparent;
+}
+
+.station .btn--icon {
+    min-width: var(--row-height);
+    padding: 6px;
+}
+
+.station .btn.is-active {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 24%, var(--surface));
+    color: var(--accent);
+}
+
+/* ——— Fields (shared input/select/textarea surface) ————————————————————— */
+
+.station .field {
+    width: 100%;
+    min-height: var(--row-height);
+    padding: 9px 11px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    color: var(--text);
+    font: inherit;
+    font-size: 13px;
+}
+
+.station .field::placeholder {
+    color: var(--muted);
+}
+
+.station .field:focus {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+}
+
+.station textarea.field {
+    resize: vertical;
+}
+
+/* ——— Focus ——————————————————————————————————————————————————————————————— */
+
+/* Keyboard focus stays visible in both themes; :focus-visible avoids a ring on
+   pointer clicks. */
+.station .btn:focus-visible,
+.station .field:focus-visible,
+.station__region:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+/* ——— Scrollbars ——————————————————————————————————————————————————————————— */
+
+/* Scoped to the skin (not `*`), so embedding it leaves the host page alone. */
+.station__region {
+    scrollbar-width: thin;
+    scrollbar-color: var(--line) transparent;
+}
+
+.station__region::-webkit-scrollbar,
+.station .panel__body::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+.station__region::-webkit-scrollbar-track,
+.station .panel__body::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.station__region::-webkit-scrollbar-thumb,
+.station .panel__body::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--muted) 45%, transparent);
+    border: 2px solid transparent;
+    border-radius: 8px;
+    background-clip: padding-box;
+}
+
+/* ——— Responsive ————————————————————————————————————————————————————————— */
+
+/* Inspector drops under the stage rather than squeezing the transcript. The grid
+   keeps two rows so every region still scrolls inside the locked viewport. */
+@media (max-width: 1120px) {
+    .station__grid {
+        grid-template-columns: 210px minmax(0, 1fr);
+        grid-template-rows: minmax(0, 1fr) minmax(0, 200px);
+    }
+
+    .station__region--aside {
+        /* Auto-placement follows DOM order, so the aside lands on row 2. */
+        grid-column: 1 / -1;
+    }
+}
+
+/* Phone width: the station is ONE line of chrome over ONE column of content
+   (R3). THE THRESHOLD IS 900px, on purpose and in exactly one place:
+   the viewport seam reports 'mobile' below `(min-width: 900px)`
+   (src/dashboard/viewport.ts:29) and sessions.css:336 turns the rail into an
+   overlay drawer at `max-width: 899px`. At the previous 820px the rail was an
+   OVERLAY between 821 and 899 while this grid still reserved its 250px column, so
+   the station paid for a column it was not showing. 899px is the same integer
+   partner sessions.css uses: it collapses exactly when the drawer opens and never
+   while `(min-width: 900px)` matches.
+   THE OLD BLOCK RESERVED THREE ROWS (2fr/1fr/1fr) for rail / stage / inspector.
+   Both side columns are off-canvas drawers below this seam, so those rows were
+   dead chrome; the block now hands the whole viewport to the transcript. */
+@media (max-width: 899px) {
+    /* ——— Frame ———————————————————————————————————————————————————————————
+       Outer padding and the bar/grid gap go to zero: the transcript bleeds to the
+       edges and the bar's hairline is the only separator. Row 1 is the intrinsic
+       one-line bar, row 2 is the stage. Safe areas are carried by the bar's top
+       padding and the composer's bottom padding (index.html ships
+       `viewport-fit=cover`, without which the insets are always 0). */
+    .station {
+        /* SKIN-LOCAL (declared here because it is mobile-only, and it stays on
+           `.station` like every other token): the height of the one-line bar,
+           safe area included. The two corner controls and both off-canvas drawers
+           measure from this one number, so they cannot drift apart. */
+        --mobile-bar: calc(var(--row-height) + 12px + env(safe-area-inset-top, 0px));
+        /* SKIN-LOCAL: the drawer wash. `--rail-scrim` (sessions.css:63) is scoped
+           to `.rail` and unreachable from the inspector column, so the aside gets
+           its own entry with the same two values; the per-theme pair is required
+           for the reason documented at sessions.css:401-406. */
+        --aside-scrim: rgba(5, 14, 18, 0.62);
+        /* A phone is compact-by-layout for the shell's own metrics: the column gaps
+           and the drawer padding shrink, and every rule that already reads these
+           tokens follows (a custom property resolves at the point of USE, so this
+           reaches transcript.css and composer.css rules even though those files
+           load after this one — see styles/index.css).
+           BOTH spellings are named on purpose: `.station[data-density='compact']`
+           (tokens.css:78-82) outranks a bare `.station`, so a compact station would
+           otherwise keep the density block's 8px/9px and ignore the phone's 6px/10px. */
+        --gap: 6px;
+        --pad: 10px;
+        padding: 0;
+        gap: 0;
+    }
+
+    .station[data-density='compact'] {
+        --gap: 6px;
+        --pad: 10px;
+    }
+
+    .station[data-theme='slate'] {
+        --aside-scrim: rgba(18, 38, 44, 0.35);
+    }
+
+    .station__grid {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: minmax(0, 1fr);
+    }
+
+    /* The two drawer columns LEAVE the grid entirely. Below this seam every child
+       of these regions is `position: fixed` (the rail and its control in
+       sessions.css, the inspector and its control below), and an out-of-flow grid
+       item takes no track — that is what removes the dead rows. The box itself is
+       fixed at the viewport origin with zero size so it can neither paint nor
+       swallow a tap on the transcript underneath it.
+       NOT `display: none`: that would destroy the fixed descendants too, because a
+       `display: none` subtree renders nothing at all. */
+    .station__region--sidebar,
+    .station__region--aside {
+        position: fixed;
+        inset: 0 auto auto 0;
+        width: 0;
+        height: 0;
+        gap: 0;
+        overflow: visible;
+    }
+
+    /* The stage is now the grid's only in-flow child, so the old `order: -1` that
+       lifted it above the two side columns is gone with them. */
+
+    /* ——— Bar: exactly one line ———————————————————————————————————————————
+       `nowrap` + a fixed line box + an ellipsised title is the single-line
+       guarantee; nothing else in the bar paints (the tagline, chips, skin
+       actions and the note are feature copy that would add rows). The 56px side
+       padding is the room the two fixed corner controls occupy — see
+       `.rail__menu` (sessions.css) and `.inspector__menu` below.
+       The skin affordances the hidden actions remove are still reachable: the
+       inspector's Settings surface (components/StationSettings.tsx) carries the
+       theme, density and motion switches. */
+    .station__bar {
+        flex-wrap: nowrap;
+        align-items: center;
+        gap: 8px;
+        min-height: var(--mobile-bar);
+        padding: calc(6px + env(safe-area-inset-top, 0px)) 56px 6px;
+        /* Full-bleed: one hairline under the bar, no frame, no corner radius. */
+        border: 0;
+        border-bottom: 1px solid var(--line);
+        border-radius: 0;
+        background: var(--raised);
+    }
+
+    .station__brand {
+        /* The title is the only bar content on a phone: it takes the row and
+           truncates instead of wrapping to a second line. */
+        flex: 1 1 auto;
+        min-width: 0;
+        overflow: hidden;
+        font-size: 13px;
+        letter-spacing: 0.06em;
+        text-transform: none;
+    }
+
+    /* The pair swaps: the desktop wordmark is out, `layout.brand.compact`
+       ("Chat v<X.X.X>") is in. BOTH spans stay in the tree — CSS chooses which one
+       paints — which is also what keeps the shell's `station-bar` text-content
+       assertion reading the same on either layout. */
+    .station__brand-name {
+        display: none;
+    }
+
+    .station__brand-compact {
+        display: block;
+        /* text-overflow does not inherit, so the truncation lives on the box that
+           actually lays the text out. */
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+    }
+
+    .station__tagline,
+    .station__chips,
+    .station__actions,
+    .station__note {
+        display: none;
+    }
+
+    /* ——— Inspector: the right-hand drawer —————————————————————————————————
+       The mirror of the rail (sessions.css:338-398): a viewport-fixed panel off
+       the right edge, a full-viewport dismiss target, the same 160ms transform
+       language, and the same LITERAL z-index pair — a token/rem z-index value is
+       the trap documented at sessions.css:48-50. `translateX(105%)` clears the
+       1px frame the way the rail's -105% clears its own. */
+    .station .inspector {
+        position: fixed;
+        inset-block: 0;
+        right: 0;
+        z-index: 20;
+        width: min(320px, 85vw);
+        padding: var(--pad);
+        /* The panel runs under the bar line, so its content starts below it (and
+           below the floating corner control). */
+        padding-top: calc(var(--mobile-bar) + var(--pad));
+        border-left: 1px solid var(--line);
+        background: var(--raised);
+        transform: translateX(105%);
+        transition: transform 160ms ease;
+        /* The drawer is its own scroller now: `.station__region--aside` is a zero
+           box, so the region rule (base.css:147-157) no longer carries this
+           column's overflow. */
+        overflow-y: auto;
+        overscroll-behavior: contain;
+    }
+
+    .station .inspector[data-open='true'] {
+        transform: translateX(0);
+    }
+
+    /* Rendered only while the drawer is open (components/ChatInspector.tsx), so it
+       can never swallow a desktop click. It is a <button> (keyboard-dismissible),
+       hence the reset — same shape as `.rail__scrim`. */
+    .station .inspector__scrim {
+        position: fixed;
+        inset: 0;
+        z-index: 10;
+        margin: 0;
+        padding: 0;
+        border: 0;
+        background: var(--aside-scrim);
+        cursor: pointer;
+    }
+
+    /* The top-right control. It is a SIBLING of the drawer, never a child: the
+       panel carries a transform, and a transformed box is the containing block of
+       its fixed descendants, which would slide the control off-screen with the
+       panel. z-index 30 keeps it tappable above the open drawer, so the same
+       corner closes it. */
+    .station .inspector__menu {
+        /* The desktop rule is `display: none` (see "Region owners" above); the
+           phone layout turns the corner control on. */
+        display: inline-flex;
+        position: fixed;
+        top: calc(6px + env(safe-area-inset-top, 0px));
+        right: 8px;
+        z-index: 30;
+    }
+}
