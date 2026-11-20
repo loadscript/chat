@@ -1,0 +1,51 @@
+{
+    "name": "@loadscript/chat",
+    "version": "1.0.2",
+    "description": "Chat application package for the loadscript harness.",
+    "type": "module",
+    "main": "./src/index.ts",
+    "module": "./src/index.ts",
+    "types": "./src/index.ts",
+    "exports": {
+        ".": {
+            "types": "./src/index.ts",
+            "default": "./src/index.ts"
+        },
+        "./package.json": "./package.json"
+    },
+    "files": [
+        "src",
+        "!src/**/*.test.ts",
+        "!src/**/*.spec.ts"
+    ],
+    "sideEffects": false,
+    "engines": {
+        "node": ">=18"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/loadscript/chat.git"
+    },
+    "homepage": "https://github.com/loadscript/chat#readme",
+    "bugs": {
+        "url": "https://github.com/loadscript/chat/issues"
+    },
+    "publishConfig": {
+        "access": "public",
+        "registry": "https://registry.npmjs.org"
+    },
+    "scripts": {
+        "test": "vitest run --passWithNoTests",
+        "typecheck": "tsc --noEmit"
+    },
+    "author": "NQQT",
+    "license": "ISC",
+    "dependencies": {
+        "@loadscript/harness": "*"
+    },
+    "devDependencies": {
+        "@types/node": "^25.9.1",
+        "typescript": "^6.0.0",
+        "vitest": "^4.1.4"
+    }
+}

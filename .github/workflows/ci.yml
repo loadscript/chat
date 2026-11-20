@@ -1,0 +1,38 @@
+# Typecheck and test the chat package.
+#
+# The reusable harness UI (and its deployable build) lives in
+# `@loadscript/harness`. This package has no UI build of its own yet, so the
+# workflow validates the package instead of publishing an artifact.
+
+name: CI
+
+on:
+    push:
+        branches: [main]
+    pull_request:
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+jobs:
+    build:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v5
+
+            - name: Setup Node
+              uses: actions/setup-node@v5
+              with:
+                  node-version: 24
+
+            # No lockfile is committed, so `npm install` rather than `npm ci`.
+            - name: Install dependencies
+              run: npm install
+
+            - name: Typecheck
+              run: npm run typecheck
+
+            - name: Test
+              run: npm test
