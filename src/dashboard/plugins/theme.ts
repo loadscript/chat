@@ -50,12 +50,15 @@ const prefers = (query: string): boolean => {
 };
 
 /**
- * 'ink' (dark) is the default skin. Only an explicit LIGHT preference flips it,
- * so an environment with no media support — jsdom, a test, a headless render —
- * still resolves to the documented default instead of the light theme.
+ * 'ink' (dark) is the ONLY skin normal startup gets. The simplified header ships no
+ * theme control (single dark theme by product decision), so the initial value is a
+ * constant rather than a media probe: an OS `prefers-color-scheme: light` preference
+ * must NOT flip the station to the light 'slate' palette, which would leave an
+ * operator with no control to switch back. The `ui.theme` cell and its validated
+ * commands stay in the contract as internal APIs (an embedder or a later surface can
+ * still drive them), and `prefers()` below still carries the motion probe.
  */
-const readInitialTheme = (): DashboardTheme =>
-    prefers('(prefers-color-scheme: light)') ? 'slate' : 'ink';
+const readInitialTheme = (): DashboardTheme => 'ink';
 
 // Density has no OS signal, so the comfortable band is always the starting point.
 const readInitialDensity = (): DashboardDensity => 'comfortable';

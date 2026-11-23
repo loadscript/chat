@@ -10,12 +10,12 @@
  *   .composer__row           the picker line ABOVE the input (.composer__pick per
  *                            picker: [Agents] left of [Model])
  *   .composer__input         the auto-growing textarea (data-testid="composer-input")
- *   .composer__help          the one-line keyboard hint under the field
  *   --- extensions (all emitted by the three components above) ---
+ *   .composer__meta          the ONE metadata line: pickers left, token count right
  *   .composer__pick          one picker's positioning context (text + overlay)
  *   .composer__pick-text     the readable label line the operator clicks
  *   .composer__pick-select   the REAL native select, invisible, overlaid on top
- *   .composer__usage         the "Total tokens: N" line
+ *   .composer__usage         the `<count> Tokens` counter, flush right on that line
  *   .composer__field         the input box the mic and the arrow dock INSIDE
  *   .composer__voice         the mic, docked at the field's left edge
  *   .composer__send          the submit arrow, docked at the field's right edge
@@ -109,10 +109,34 @@
     border-radius: var(--radius-sm);
 }
 
-/* ——— Token usage line ————————————————————————————————————————————————— */
+/* ——— Metadata line (the counter, at the right edge of the picker line) — */
 
+/* ComposerDeck wraps the picker strip and the counter in this ONE flex track, so the
+   counter no longer spends a row of its own; `baseline` keeps the 11px picker labels
+   and the 11px counter on the same text line, and `wrap` lets a narrow column drop
+   the counter under the pickers instead of clipping it. */
+.station .composer__meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 14px;
+    min-width: 0;
+}
+
+/* The picker strip is the flexible track: it absorbs everything the counter does not
+   need, and its own labels ellipsise (`.composer__pick-text`) rather than pushing the
+   count past the right edge. */
+.station .composer__meta > .composer__row {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+/* The tail of that line: `margin-left: auto` (the last value of the shorthand) eats
+   the free space, so the count reads flush right — and after a wrap it is still the
+   right-most thing on its own line. Copy is `<count> Tokens`, so `uppercase` matches
+   the pickers beside it (the skin's metadata treatment, not new styling). */
 .station .composer__usage {
-    margin: 0;
+    margin: 0 0 0 auto;
     color: var(--muted);
     font-size: 11px;
     letter-spacing: 0.06em;
@@ -227,14 +251,6 @@
     opacity: 0.85;
 }
 
-/* ——— Help line ————————————————————————————————————————————————————— */
-
-.station .composer__help {
-    margin: 0;
-    color: var(--muted);
-    font-size: 11px;
-}
-
 /* Narrow viewports need no shrink defenses: the picker line wraps and the input
    stacks under it (oracle 146-147). Below the 900px seam this file owns the
    phone FOOTER: the composer is the bar at the bottom of the screen, so it loses
@@ -273,14 +289,13 @@
         max-width: none;
     }
 
-    /* Two lines of chrome the phone does not need:
-       - the keyboard hint is WRONG copy below the seam, where Enter always
-         inserts a newline and the send button submits (ComposerDeck.tsx:133-140);
-       - the token counters live in the rail's Settings tab (ChatSidebar.tsx:305),
-         which the phone reaches through the left drawer.
-       Both stay in the DOM: their testids are asserted by the component tests, and
-       `display: none` removes ink, not data. */
-    .station .composer__help,
+    /* The one line of chrome the phone does not need: the token counter, because
+       the counters also live in the rail's Settings tab (ChatSidebar.tsx:305),
+       which the phone reaches through the left drawer. It stays in the DOM: its
+       testid is asserted by the component tests, and `display: none` removes ink,
+       not data. (This rule used to hide the keyboard hint as well — that element
+       is gone from the composer, and with it the copy that was WRONG below the
+       seam, where Enter always inserts a newline and the button submits.) */
     .station .composer__usage {
         display: none;
     }

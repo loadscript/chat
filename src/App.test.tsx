@@ -18,11 +18,12 @@
  * throws (plugins/harness.ts:121), which is what makes the double load-bearing
  * rather than decorative.
  */
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App';
+import { APP_VERSION } from './version';
 import { installFetch, jsonResponse, resetStorage, seedSettings } from './dashboard/plugins/harness';
 
 afterEach(() => {
@@ -54,8 +55,16 @@ describe('App (public shell)', () => {
 
         // The shell: the viewport-locked station root and its three region columns.
         expect(station.className).toBe('station');
+        // R4: normal startup is the dark Ink skin, and the light-scheme probe cannot
+        // change that (this environment has no matchMedia at all, and the theme cell no
+        // longer reads one).
         expect(station.getAttribute('data-theme')).toBe('ink');
-        expect(screen.getByTestId('station-bar').textContent).toContain('Chat Assistant');
+        // R1: the bar's one and only text is the versioned title — the tagline, the
+        // notice and the separate version chip are gone, so an exact match is the point.
+        expect(screen.getByTestId('station-bar').textContent).toBe(`Chat v${APP_VERSION}`);
+        // R3: the configuration editor hangs off that bar, behind one closed dialog.
+        expect(screen.getByTestId('settings-button').getAttribute('aria-expanded')).toBe('false');
+        expect(screen.queryByTestId('settings-dialog')).toBeNull();
         expect(document.querySelectorAll('.station__region')).toHaveLength(3);
 
         // The four grammar ids the rebuild was accepted on (the data-testid grammar in
@@ -84,6 +93,31 @@ describe('App (public shell)', () => {
         // neither (the "no two components may both render `error-banner`" rule).
         expect(screen.queryByTestId('notice-strip')).toBeNull();
         expect(screen.queryAllByTestId('error-banner')).toHaveLength(0);
+    });
+
+    it('keeps the rail Settings readout while the inspector hosts no configuration editor', () => {
+        // R5: the rail's Settings tab and its status readout stay (they are read-only
+        // state, not a second editor), and the editable panel left the aside so the
+        // header dialog is the only one on screen.
+        resetStorage();
+        seedSettings('online', '');
+        stubDeploymentReads();
+
+        render(<App />);
+
+        // Closed dialog, and the aside's chat-tab panel: no configuration surface in
+        // the tree at all.
+        expect(screen.queryByTestId('settings-workspace')).toBeNull();
+
+        fireEvent.click(screen.getByTestId('sidebar-tab-settings'));
+
+        // The readout is there...
+        expect(screen.getByTestId('sidebar-settings')).toBeTruthy();
+        expect(screen.getByTestId('sidebar-status').textContent).toBe('idle');
+        // ...and it is the ONLY settings-shaped thing on screen: the aside renders its
+        // quiet panel for that tab instead of StationSettings.
+        expect(screen.queryByTestId('settings-workspace')).toBeNull();
+        expect(screen.getByTestId('inspector-idle')).toBeTruthy();
     });
 
     it('carries the skin with the public export, not only with the app entry', () => {

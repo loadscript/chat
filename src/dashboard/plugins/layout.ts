@@ -42,11 +42,14 @@ const REGIONS: readonly RegionSpec[] = [
 // src/version.ts (the package.json `version` injected as __APP_VERSION__), so the
 // skin never carries a hardcoded duplicate of it.
 //
-// `compact` is the PHONE title (styles/base.css shows it at or below 899px and
-// hides everything else the brand publishes): the bar must be exactly one line,
-// and the version chip it replaces is a desktop affordance. It repeats the chip's
-// `v<version>` string inside the words rather than referencing `chip`, because the
-// mobile bar has no chip slot to compose.
+// THE BAR RENDERS EXACTLY ONE OF THESE: `compact`, at every width (see
+// WorkstationShell.tsx's `station-title` heading). The header is simply
+// "Chat v<X.X.X>", so the version lives in the title and the bar's own version chip
+// is gone with it. `name`, `tagline`, `chip` and `notice` stay published because
+// `BrandSpec` is a contract this plugin shares with the shell — dropping the fields
+// would be a breaking change to a type a host can read, and a headless or embedded
+// variant may still want the wordmark and the tagline. They are metadata now, not
+// rendered copy.
 const BRAND: BrandSpec = {
     name: 'Chat Assistant',
     tagline: 'Plugin-composed workstation — every surface below registers itself',
@@ -78,7 +81,7 @@ const PLACEHOLDER_STAGE: PanelValue = {
 const PLACEHOLDER_ASIDE: PanelValue = {
     title: 'Inspector',
     hint: 'placeholder',
-    body: 'Turn details, usage and skin settings will render in this column.'
+    body: 'Turn details and usage will render in this column.'
 };
 
 export function createLayoutPlugin(): DashboardPlugin {

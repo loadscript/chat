@@ -10,8 +10,10 @@
 // before, and the names below are the same components with the same
 // geometry — pinned by icons.test.tsx.
 //
-// Only the eleven glyphs this package actually uses are re-exported; the
-// remaining built-ins of @rightless/icons stay out of this package's API.
+// Only the glyphs this package actually uses are re-exported; the remaining
+// built-ins of @rightless/icons stay out of this package's API. `SettingsIcon`
+// joined the list with the header's configuration dialog (the bar's gear control,
+// see dashboard/components/SettingsDialog.tsx) and is pinned by icons.test.tsx.
 export { IconBase } from '@rightless/icons';
 export type { IconBaseProps, IconProps } from '@rightless/icons';
 export { MenuIcon } from '@rightless/icons';
@@ -25,3 +27,5 @@ export { ChevronDownIcon } from '@rightless/icons';
 export { ChevronUpIcon } from '@rightless/icons';
 export { SwitchIcon } from '@rightless/icons';
 export { ForkIcon } from '@rightless/icons';
+// The bar's configuration control (dashboard/components/SettingsDialog.tsx).
+export { SettingsIcon } from '@rightless/icons';

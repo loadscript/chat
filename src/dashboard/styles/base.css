@@ -55,27 +55,27 @@
 }
 
 .station__brand {
+    /* THE title, at every width ("Chat v<X.X.X>", `layout.brand.compact`). It is the
+       bar's only text, so it claims the free space (`flex: 1 1 auto` + the auto-margin
+       rule below no longer has to push anything) and truncates instead of wrapping
+       when the viewport is too narrow for it — which is the phone bar's one-line
+       guarantee. `text-transform` stays NONE: the title is a version string, and
+       uppercasing "v1.0.2" into "V1.0.2" would misstate it. */
+    flex: 1 1 auto;
+    min-width: 0;
     margin: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
     font-size: 17px;
     font-weight: 700;
     letter-spacing: 0.08em;
-    text-transform: uppercase;
 }
 
-/* The phone bar's one-line title (`layout.brand.compact`,
- * WorkstationShell.tsx:184-196) is desktop-invisible. This is the ONLY reason the
- * rule exists: it lives outside the media blocks so the >=900px bar renders the
- * name exactly as before, and the 899px block below flips the pair. */
-.station__brand-compact {
-    display: none;
-}
-
-.station__tagline {
-    margin: 0;
-    color: var(--muted);
-    font-size: 12px;
-}
-
+/* The chip row: STATUS_SLOT contributions, so it is empty (and unrendered) until a
+   plugin contributes one. `margin-left: auto` still does the bar's right-alignment
+   when it IS rendered — the brand chip that used to guarantee this row left with the
+   version, which moved into the title. */
 .station__chips {
     display: flex;
     flex-wrap: wrap;
@@ -83,20 +83,16 @@
     margin-left: auto;
 }
 
+/* The bar's controls. ONE today — the icon-only configuration button
+   (components/SettingsDialog.tsx) — and it stays visible at every width, including on
+   the phone bar: the dialog it opens is the package's only configuration editor, so a
+   layout that hid this row would leave a phone with no way to change the mode. The
+   899px block keeps the title's right padding clear of the fixed drawer controls. */
 .station__actions {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
-}
-
-.station__note {
-    /* The footer note of the example becomes bar text here: a footer row would
-       steal height from the regions in a locked viewport. */
-    flex-basis: 100%;
-    margin: 0;
-    color: var(--muted);
-    font-size: 11px;
-    letter-spacing: 0.05em;
+    margin-left: auto;
 }
 
 /* ——— Chips ——————————————————————————————————————————————————————————————— */
@@ -124,12 +120,6 @@
 
 .station .chip__ref {
     color: var(--muted);
-}
-
-.station .chip--brand {
-    border-color: var(--accent);
-    color: var(--accent);
-    font-weight: 700;
 }
 
 /* ——— Region grid ————————————————————————————————————————————————————————— */
@@ -188,9 +178,11 @@
 
 /* The inspector column is the same shape: a wrapper whose one child is whichever
    feature surface `chat.sidebarTab` selects (components/ChatInspector.tsx). The
-   feature keeps its own root (.agents / .tools / .settings / .panel) and this only
+   feature keeps its own root (.agents / .tools / .panel) and this only
    sizes the column, so a long registry scrolls inside the region instead of
-   pushing the composer off-screen. */
+   pushing the composer off-screen. The rail's Settings tab is a readout that lives in
+   the rail, and configuration lives in the header's dialog, so this column renders no
+   `.settings` surface any more. */
 .station .inspector {
     display: flex;
     flex-direction: column;
@@ -483,13 +475,11 @@
 
     /* ——— Bar: exactly one line ———————————————————————————————————————————
        `nowrap` + a fixed line box + an ellipsised title is the single-line
-       guarantee; nothing else in the bar paints (the tagline, chips, skin
-       actions and the note are feature copy that would add rows). The 56px side
-       padding is the room the two fixed corner controls occupy — see
-       `.rail__menu` (sessions.css) and `.inspector__menu` below.
-       The skin affordances the hidden actions remove are still reachable: the
-       inspector's Settings surface (components/StationSettings.tsx) carries the
-       theme, density and motion switches. */
+       guarantee. What is left in the bar is the title and the configuration
+       button — the tagline and the note are gone from the markup, and the chip
+       row is the only thing still hidden here (a phone bar has no room for live
+       chips). The 56px side padding is the room the two fixed corner controls
+       occupy — see `.rail__menu` (sessions.css) and `.inspector__menu` below. */
     .station__bar {
         flex-wrap: nowrap;
         align-items: center;
@@ -504,37 +494,19 @@
     }
 
     .station__brand {
-        /* The title is the only bar content on a phone: it takes the row and
-           truncates instead of wrapping to a second line. */
-        flex: 1 1 auto;
-        min-width: 0;
-        overflow: hidden;
+        /* Same box as the desktop rule above (flex, truncation), re-set here in the
+           phone's own type scale: the title is the bar's only text, so it gets the
+           smaller, non-uppercase treatment that fits a one-line row. */
         font-size: 13px;
         letter-spacing: 0.06em;
         text-transform: none;
     }
 
-    /* The pair swaps: the desktop wordmark is out, `layout.brand.compact`
-       ("Chat v<X.X.X>") is in. BOTH spans stay in the tree — CSS chooses which one
-       paints — which is also what keeps the shell's `station-bar` text-content
-       assertion reading the same on either layout. */
-    .station__brand-name {
-        display: none;
-    }
-
-    .station__brand-compact {
-        display: block;
-        /* text-overflow does not inherit, so the truncation lives on the box that
-           actually lays the text out. */
-        overflow: hidden;
-        white-space: nowrap;
-        text-overflow: ellipsis;
-    }
-
-    .station__tagline,
-    .station__chips,
-    .station__actions,
-    .station__note {
+    /* Live chips are the only bar child a phone drops: the row is empty until a
+       plugin contributes one, and a chip would add a second row to a bar whose whole
+       contract is one line. The configuration button stays (see `.station__actions`
+       above) — on a phone it is the only way to reach the mode switch. */
+    .station__chips {
         display: none;
     }
 

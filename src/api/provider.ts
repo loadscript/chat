@@ -142,7 +142,7 @@ const streamCompletionRequest = async (
         // OpenAI-compatible providers omit usage from streamed responses unless
         // this explicit opt-in is present. Without it, the SSE parser correctly
         // sees content but never receives a usage frame, so the conversation UI
-        // falls back to "Total tokens: 0" after every completed turn.
+        // falls back to "0 Tokens" after every completed turn.
         body: JSON.stringify({
             model,
             stream: true,

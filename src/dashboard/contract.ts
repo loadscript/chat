@@ -47,12 +47,18 @@
 //
 // Shell-owned extras (NOT part of the downstream grammar, do not reuse):
 //   region-sidebar | region-stage | region-aside   the three grid columns
-//   station-title                                  the phone bar's one-line title
-//                                                  (`layout.brand` compact text,
-//                                                  hidden at/above 900px)
-//   theme-toggle | density-toggle                  the bar's skin affordances
-// The bar's brand chip is static chrome built from the `layout.brand` service;
-// STATUS_SLOT contributions render next to it and carry their own ids.
+//   station-title                                  the bar's ONE versioned title
+//                                                  (`layout.brand.compact`, i.e.
+//                                                  "Chat v<X.X.X>", at every width)
+//   settings-button                                the bar's icon-only configuration
+//                                                  control (aria-haspopup="dialog")
+//   settings-dialog | -backdrop | -close | -title  the configuration popup's parts
+//                                                  (components/SettingsDialog.tsx —
+//                                                  it is the package's ONLY place
+//                                                  where `chat.mode` and
+//                                                  `chat.providerBase` are edited)
+// The bar's chip row is the STATUS_SLOT contributions and renders only when a plugin
+// contributes one; the version moved out of a chip and into the title.
 //
 // MOBILE DRAWER EXTRAS (feature-owned, below the 900px seam; see viewport.ts):
 //   sidebar-toggle | sidebar-scrim   the rail's control + dismiss target
@@ -84,7 +90,7 @@ export const SIDEBAR_SLOT = 'layout.sidebar';
 /** Centre stage: transcript + composer (one owner per region, see the shell). */
 export const STAGE_SLOT = 'layout.stage';
 
-/** Inspector aside: turn details, usage, skin settings. */
+/** Inspector aside: the agent and tool editors (configuration is the header's dialog). */
 export const ASIDE_SLOT = 'layout.aside';
 
 /** Small live chips rendered in the station bar. */
@@ -113,19 +119,19 @@ export type RegionSpec = {
 
 /** Brand metadata published by the layout plugin (`layout.brand` service). */
 export type BrandSpec = {
-    /** Station bar heading. */
+    /** Station bar heading. Not rendered by the shipped bar (see `compact`). */
     name: string;
-    /** Secondary line under the heading. */
+    /** Secondary line under the heading. Not rendered by the shipped bar. */
     tagline: string;
-    /** Accent-bordered chip in the bar's chip group. */
+    /** Accent-bordered chip in the bar's chip group. Not rendered by the shipped bar. */
     chip: string;
-    /** Footer note under the grid. */
+    /** Footer note under the grid. Not rendered by the shipped bar. */
     notice: string;
     /**
-     * The phone bar's ONE-LINE title (styles/base.css shows this and hides
-     * `name` / `tagline` / `chip` / `notice` at or below 899px). It carries the
-     * version inline — the chip the desktop bar shows is not rendered on a phone,
-     * so the version would otherwise disappear entirely.
+     * THE TITLE the bar renders, at every width: "Chat v<X.X.X>". The version moved
+     * out of `chip` and into the heading, so the header says the version once and
+     * needs no chip row of its own (styles/base.css truncates this box rather than
+     * hiding it, which is what keeps the phone bar to one line).
      */
     compact: string;
 };

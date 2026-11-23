@@ -32,11 +32,13 @@ afterEach(() => {
     cleanup();
 });
 
-/** The idle panel's copy, verbatim from ChatInspector.tsx:59-63. */
+/** The idle panel's copy, verbatim from ChatInspector.tsx — note the ABSENCE of a
+ *  `hint` field: the hint line is the rail tab the column is following, so it is one
+ *  of 'chat' / 'settings' depending on the cell, and the body no longer offers
+ *  "Settings" as something to edit here (T3 moved configuration to the header). */
 const IDLE = {
     title: 'Inspector',
-    hint: 'chat',
-    body: 'This column follows the rail. Pick Agent, Tool or Settings to edit that registry here.'
+    body: "This column follows the rail. Pick Agent or Tool to edit that registry here; configuration is in the header's Settings dialog."
 } as const;
 
 const SEED: HarnessSeed = {};
@@ -58,28 +60,44 @@ describe('the surface the rail selects', () => {
             IDLE.title
         );
         expect(screen.getByTestId('inspector-idle').querySelector('.panel__hint')?.textContent).toBe(
-            IDLE.hint
+            'chat'
         );
         expect(screen.getByTestId('inspector-idle').querySelector('.panel__empty')?.textContent).toBe(
             IDLE.body
         );
     });
 
-    it('switches to the agent, tool and settings surface the rail tab names', () => {
+    it('switches to the agent and tool surface the rail tab names', () => {
         const view = renderWithHarness(<ChatInspector />, SEED);
         const cases: readonly [SidebarTab, string][] = [
             ['agent', 'agent-surface'],
-            ['tool', 'tool-surface'],
-            ['settings', 'settings-workspace']
+            ['tool', 'tool-surface']
         ];
         for (const [tab, testId] of cases) {
             act(() => view.write<SidebarTab>(CHAT_SIDEBAR_TAB_STATE, tab));
             expect(screen.getByTestId(testId)).toBeTruthy();
-            // The idle panel belongs to the chat tab alone.
+            // The idle panel belongs to the two tabs with nothing to edit here.
             expect(screen.queryByTestId('inspector-idle')).toBeNull();
         }
         act(() => view.write<SidebarTab>(CHAT_SIDEBAR_TAB_STATE, 'chat'));
         expect(screen.getByTestId('inspector-idle')).toBeTruthy();
+    });
+
+    it('hands configuration over to the header: the settings tab renders no editor', () => {
+        // R5: this column stopped hosting StationSettings, because the dialog in the
+        // bar is the one configuration editor. The tab itself is untouched — the rail's
+        // readout (`sidebar-settings`, ChatSidebar.tsx) is the rail's own tree and this
+        // component never renders it — so what is pinned here is that the aside shows
+        // the quiet panel for that tab and no `settings-workspace` anywhere.
+        const view = renderWithHarness(<ChatInspector />, SEED);
+
+        act(() => view.write<SidebarTab>(CHAT_SIDEBAR_TAB_STATE, 'settings'));
+
+        expect(screen.queryByTestId('settings-workspace')).toBeNull();
+        expect(screen.getByTestId('inspector-idle')).toBeTruthy();
+        expect(screen.getByTestId('inspector-idle').querySelector('.panel__hint')?.textContent).toBe(
+            'settings'
+        );
     });
 });
 
@@ -151,8 +169,9 @@ describe('the mobile drawer', () => {
             expect(view.read<boolean>(CHAT_ASIDE_OPEN_STATE)).toBe(false);
             expect(screen.getByTestId('aside-panel').getAttribute('data-open')).toBe('false');
             expect(screen.queryByTestId('aside-scrim')).toBeNull();
-            // The column itself kept rendering — only the overlay went away.
-            expect(screen.getByTestId('settings-workspace')).toBeTruthy();
+            // The column itself kept rendering — only the overlay went away. (The
+            // settings tab's aside content is the quiet panel; see the case above.)
+            expect(screen.getByTestId('inspector-idle')).toBeTruthy();
 
             restore = stubViewport('mobile');
         } finally {

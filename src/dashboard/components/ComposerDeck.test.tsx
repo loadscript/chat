@@ -4,7 +4,8 @@
 // (src/components/ChatAssistantApp.tsx): the Enter/Shift+Enter/IME gate
 // (5179-5192 + the header rule at 123-126), the border-box autogrow math
 // (2421-2439), the focus-gated send arrow (5081-5090, 5222-5241), the always
-// visible mic (5205-5221) and the `Total tokens: N` line (5169-5171).
+// visible mic (5205-5221) and the token counter (5169-5171 — now the right-hand tail
+// of the picker line, `<count> Tokens`, instead of its own `Total tokens: N` row).
 import { act, cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { AgentDefinition } from '../../agents';
@@ -245,9 +246,36 @@ describe('the stop control while a reply is generating', () => {
 describe('token usage and pickers', () => {
     it('prints the session token counter, and zero when the session has none', () => {
         const view = renderWithHarness(<ComposerDeck />, { ...PROVIDER_SEED, usage: { total_tokens: 1234 } });
-        expect(screen.getByTestId('token-usage').textContent).toBe('Total tokens: 1234');
+        expect(screen.getByTestId('token-usage').textContent).toBe('1234 Tokens');
         act(() => view.write(CHAT_USAGE_STATE, null));
-        expect(screen.getByTestId('token-usage').textContent).toBe('Total tokens: 0');
+        expect(screen.getByTestId('token-usage').textContent).toBe('0 Tokens');
+    });
+
+    it('tracks the counter with the usage cell instead of freezing a number', () => {
+        // The number is `chat.usage.total_tokens`, live: a usage frame arriving
+        // mid-session repaints the line, which is what a hardcoded value would not.
+        const view = renderWithHarness(<ComposerDeck />, { ...PROVIDER_SEED, usage: { total_tokens: 7925 } });
+        expect(screen.getByTestId('token-usage').textContent).toBe('7925 Tokens');
+        act(() => view.write(CHAT_USAGE_STATE, { total_tokens: 8412 }));
+        expect(screen.getByTestId('token-usage').textContent).toBe('8412 Tokens');
+    });
+
+    it('sits on the picker line as its right-hand track, with no label row of its own', () => {
+        // R2's structural half: the counter is the LAST track of `.composer__meta`,
+        // the same flex row as the pickers, and composer.css gives that last track
+        // `margin-left: auto` (asserted in styles/skin.test.ts) — so it reads flush
+        // right on the metadata line rather than as a `TOTAL TOKENS:` row.
+        renderWithHarness(<ComposerDeck />, { ...PROVIDER_SEED, usage: { total_tokens: 7925 } });
+        const usage = screen.getByTestId('token-usage');
+        const meta = usage.parentElement as HTMLElement;
+        expect(meta.className).toBe('composer__meta');
+        expect(Array.from(meta.children).map((child) => child.getAttribute('data-testid'))).toEqual([
+            'model-picker',
+            'token-usage'
+        ]);
+        // The count carries its own unit and no label, in that exact order.
+        expect(usage.tagName).toBe('P');
+        expect(usage.textContent).toBe('7925 Tokens');
     });
 
     it('aligns each option label with its catalog id and keeps the full id as the value', async () => {
@@ -312,6 +340,31 @@ describe('token usage and pickers', () => {
             'modal/glm-5.3-flash'
         ]);
         expect(screen.getByTestId('model-label').textContent).toBe('old-model');
+    });
+});
+
+describe('the keyboard hint line is gone', () => {
+    it('renders no help line beside the input', () => {
+        renderWithHarness(<ComposerDeck />, { ...PROVIDER_SEED, draft: 'typed' });
+        // R1: the copy, the element and its class are ALL absent. The strongest form
+        // of the assertion is the composer's own child list: metadata line, then the
+        // input box, and nothing under it.
+        expect(screen.queryByText('Enter sends, Shift+Enter adds a newline')).toBeNull();
+        expect(document.querySelector('.composer__help')).toBeNull();
+        const form = screen.getByTestId('composer');
+        expect(Array.from(form.children).map((child) => child.className)).toEqual([
+            'composer__meta',
+            'composer__field'
+        ]);
+    });
+
+    it('keeps it out while a reply generates, where the stop control carries the copy', () => {
+        // The old help line doubled as a "Generating —" notice. That copy went with
+        // the hint: the cancel control states it through its own accessible name.
+        renderWithHarness(<ComposerDeck />, { ...PROVIDER_SEED, status: 'sending', draft: 'asked' });
+        expect(document.querySelector('.composer__help')).toBeNull();
+        expect(screen.queryByText(/Generating/)).toBeNull();
+        expect(screen.getByTestId('cancel-button').getAttribute('title')).toBe('Stop generating reply');
     });
 });
 

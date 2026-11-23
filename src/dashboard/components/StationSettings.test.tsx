@@ -1,28 +1,24 @@
-// StationSettings: the configuration surface's render and dispatch contract.
+// StationSettings: the configuration surface's render and dispatch contract (T3 shape).
 //
-// The oracle's settings panel (src/components/ChatAssistantApp.tsx:4808-4871) is the
-// source of every string asserted here, and the assertions are exact: option VALUES
-// and LABELS, the note copy, the placeholder, and the offline-only field rules.
+// WHAT THIS FILE PINNED BEFORE T3 and what changed: the theme / spacing / motion
+// groups, the palette swatch list and the two long notes (mode scope + blank-base
+// guidance) are GONE from the product, so their assertions are gone with them — this
+// file now pins a surface of exactly two controls and no prose. The half that did NOT
+// change is the part that matters most: every mutation goes through a command
+// (`chat.mode.set`, `chat.providerBase.set`) and never through a cell write, the mode
+// value is coerced the way the oracle's `switchMode` coerces it, and the provider base
+// keeps the RAW typed value in the cell (fluid typing, oracle 3360-3362) while the
+// command owns normalization and persistence.
 //
-// Two things are pinned beyond the copy:
-//   1. EVERY mutation goes through a command (`chat.mode.set`, `chat.providerBase.set`,
-//      `ui.*.set`) and never through a cell write — the harness publishes the value
-//      into the cell the way the real plugins do, so the follow-up render proves the
-//      control is driven by state rather than by its own DOM value.
-//   2. The provider base keeps the RAW typed value in the cell (fluid typing, oracle
-//      3360-3362) while the command owns normalization and persistence.
+// The harness publishes each command's input into the cell the way the real plugins do
+// (./test-harness.tsx), so every "dispatch then re-render" assertion below also proves
+// the control is driven by STATE rather than by its own DOM value.
 import { act, cleanup, fireEvent, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
     CHAT_MODE_STATE,
     CHAT_PROVIDER_BASE_STATE,
-    UI_DENSITY_STATE,
-    UI_MOTION_STATE,
-    UI_THEME_STATE,
-    type ChatMode,
-    type DashboardDensity,
-    type DashboardMotion,
-    type DashboardTheme
+    type ChatMode
 } from '../contract';
 import { StationSettings } from './StationSettings';
 import { renderWithHarness, type HarnessSeed } from './test-harness';
@@ -39,13 +35,15 @@ const OFFLINE_SET: HarnessSeed = {
 };
 
 describe('the mode selector', () => {
-    it('renders the oracle\'s two options with their exact values and labels', () => {
+    it('renders the two modes with their exact command values and bare labels', () => {
         renderWithHarness(<StationSettings />, ONLINE);
         const select = screen.getByTestId('mode-select') as HTMLSelectElement;
 
+        // The option VALUES are the `chat.mode` vocabulary; the labels lost the
+        // parenthetical explanations the product no longer prints.
         expect(Array.from(select.options).map((option) => [option.value, option.text])).toEqual([
-            ['online', 'Online (application servers)'],
-            ['offline', 'Offline (no application server)']
+            ['online', 'Online'],
+            ['offline', 'Offline']
         ]);
         expect(select.value).toBe('online');
         expect(select.getAttribute('aria-label')).toBe('Assistant mode');
@@ -56,12 +54,14 @@ describe('the mode selector', () => {
         expect(within(field).getByTestId('mode-select')).toBeTruthy();
     });
 
-    it('keeps the scope note visible in BOTH modes (R6)', () => {
+    it('renders no description in either mode', () => {
+        // R2 removed the notes, not just their wording: neither testid may exist while
+        // online OR while offline, so a re-added paragraph fails here by name.
         for (const seed of [ONLINE, OFFLINE_BLANK]) {
-            const { unmount } = renderWithHarness(<StationSettings />, seed);
-            expect(screen.getByTestId('mode-note').textContent).toBe(
-                'Offline is a no-Chat-Assistant-server mode: conversations are stored in this browser and NO requests are made to the application storage server or the private provider relay. The model endpoints below are still remote OpenAI-compatible inference services — they require network connectivity and CORS from this browser (this is not a network-free local model, and no service worker, bundled browser model, or local tool execution is provided).'
-            );
+            const { container, unmount } = renderWithHarness(<StationSettings />, seed);
+            expect(screen.queryByTestId('mode-note')).toBeNull();
+            expect(screen.queryByTestId('offline-endpoint-hint')).toBeNull();
+            expect(container.querySelectorAll('.settings__note')).toHaveLength(0);
             unmount();
         }
     });
@@ -95,33 +95,20 @@ describe('the offline provider base', () => {
 
         expect(screen.queryByTestId('provider-base-field')).toBeNull();
         expect(screen.queryByTestId('provider-base-input')).toBeNull();
-        expect(screen.queryByTestId('offline-endpoint-hint')).toBeNull();
     });
 
-    it('names both derived routes in its label and the placeholder, and asks for a base when blank', () => {
+    it('names the field, keeps the LAN base as its placeholder, and adds no prose', () => {
         const view = renderWithHarness(<StationSettings />, OFFLINE_BLANK);
         const field = screen.getByTestId('provider-base-field');
         const input = screen.getByTestId('provider-base-input') as HTMLInputElement;
 
-        expect(within(field).getByText(/Provider base URL/).textContent).toBe(
-            'Provider base URL (models /models · stream /chat/completions)'
-        );
+        // The caption is the field NAME; the derived routes it used to spell out are
+        // documented in api/offline.ts, where they are built.
+        expect(within(field).getByText(/Provider base URL/).textContent).toBe('Provider base URL');
         expect(input.value).toBe('');
         expect(input.placeholder).toBe('http://192.168.50.109:8800/providers/private/v1');
         expect(input.getAttribute('aria-label')).toBe('Offline provider base URL');
-        expect(screen.getByTestId('offline-endpoint-hint').textContent).toBe(
-            'Set the provider base URL to load the model catalog from its /models route and stream replies from /chat/completions (for example, http://192.168.50.109:8800/providers/private/v1). While it is blank, no request is sent to the default app server.'
-        );
         expect(view.read<string>(CHAT_PROVIDER_BASE_STATE)).toBe('');
-    });
-
-    it('stops nagging once the base is configured', () => {
-        renderWithHarness(<StationSettings />, OFFLINE_SET);
-
-        expect((screen.getByTestId('provider-base-input') as HTMLInputElement).value).toBe(
-            'http://192.168.50.109:8800/providers/private/v1'
-        );
-        expect(screen.queryByTestId('offline-endpoint-hint')).toBeNull();
     });
 
     it('dispatches the RAW typed value, mid-edit included, with no trimming', () => {
@@ -141,98 +128,75 @@ describe('the offline provider base', () => {
             ' http://lan.test/v1/ '
         );
     });
-});
 
-describe('the skin switches', () => {
-    it('marks the live value of each group as pressed, and only that one', () => {
-        renderWithHarness(<StationSettings />, { ...ONLINE, theme: 'slate', density: 'compact' });
+    it('re-reads a base that was configured outside the surface', () => {
+        // The dialog can open over a station whose base arrived from localStorage, so
+        // the field renders the CELL, not a cached default.
+        const view = renderWithHarness(<StationSettings />, OFFLINE_BLANK);
 
-        const pressed = (testId: string): boolean =>
-            screen.getByTestId(testId).getAttribute('aria-pressed') === 'true';
-
-        expect(pressed('settings-theme-ink')).toBe(false);
-        expect(pressed('settings-theme-slate')).toBe(true);
-        expect(pressed('settings-density-comfortable')).toBe(false);
-        expect(pressed('settings-density-compact')).toBe(true);
-        expect(pressed('settings-motion-full')).toBe(true);
-        expect(pressed('settings-motion-reduced')).toBe(false);
-        // Each set is one accessible group, so a screen reader announces the pair
-        // together instead of six unrelated buttons.
-        expect(screen.getByTestId('settings-theme-group').getAttribute('aria-label')).toBe('Theme');
-        expect(screen.getByTestId('settings-density-group').getAttribute('aria-label')).toBe('Spacing');
-        expect(screen.getByTestId('settings-motion-group').getAttribute('aria-label')).toBe('Motion');
-    });
-
-    it('states the value each control WOULD set, and dispatches it', () => {
-        const view = renderWithHarness(<StationSettings />, ONLINE);
-
-        fireEvent.click(screen.getByTestId('settings-theme-slate'));
-        fireEvent.click(screen.getByTestId('settings-density-compact'));
-        fireEvent.click(screen.getByTestId('settings-motion-reduced'));
-
-        expect(view.callsOf('ui.theme.set')).toEqual(['slate']);
-        expect(view.callsOf('ui.density.set')).toEqual(['compact']);
-        expect(view.callsOf('ui.motion.set')).toEqual(['reduced']);
-        // The pressed state follows the CELL, which is what the shell projects onto
-        // `.station[data-*]`.
-        expect(view.read<DashboardTheme>(UI_THEME_STATE)).toBe('slate');
-        expect(view.read<DashboardDensity>(UI_DENSITY_STATE)).toBe('compact');
-        expect(view.read<DashboardMotion>(UI_MOTION_STATE)).toBe('reduced');
-        expect(screen.getByTestId('settings-theme-slate').getAttribute('aria-pressed')).toBe('true');
-    });
-
-    it('re-arms its own control from a change made anywhere else in the graph', () => {
-        const view = renderWithHarness(<StationSettings />, ONLINE);
-
-        act(() => view.write<DashboardMotion>(UI_MOTION_STATE, 'reduced'));
-
-        expect(screen.getByTestId('settings-motion-reduced').getAttribute('aria-pressed')).toBe(
-            'true'
+        act(() =>
+            view.write<string>(
+                CHAT_PROVIDER_BASE_STATE,
+                'http://192.168.50.109:8800/providers/private/v1'
+            )
         );
-        expect(screen.getByTestId('settings-motion-full').getAttribute('aria-pressed')).toBe('false');
-        // No command ran for an external write: the panel follows state, it does not
-        // echo its own clicks.
-        expect(view.callsOf('ui.motion.set')).toEqual([]);
+
+        expect((screen.getByTestId('provider-base-input') as HTMLInputElement).value).toBe(
+            OFFLINE_SET.providerBase
+        );
+        expect(view.callsOf('chat.providerBase.set')).toEqual([]);
     });
 });
 
-describe('the palette swatches', () => {
-    it('prints the active theme\'s token set in a fixed order', () => {
-        const view = renderWithHarness(<StationSettings />, { ...ONLINE, theme: 'slate' });
-        const list = screen.getByTestId('settings-palette');
+describe('the two controls are the whole surface (R2)', () => {
+    it('renders nothing but the mode field while online', () => {
+        const view = renderWithHarness(<StationSettings />, ONLINE);
+        const workspace = screen.getByTestId('settings-workspace');
 
-        expect(list.getAttribute('aria-label')).toBe('slate palette');
-        const rows = within(list).getAllByRole('listitem');
-        expect(rows.map((row) => row.getAttribute('data-testid'))).toEqual([
-            'swatch-surface',
-            'swatch-raised',
-            'swatch-line',
-            'swatch-text',
-            'swatch-muted',
-            'swatch-accent',
-            'swatch-warn'
-        ]);
-        // The chip is CSS-tinted (background: var(--token)) and the row prints the
-        // REFERENCE, never a duplicated hex value.
-        expect(rows[0].querySelector('.swatches__chip')?.getAttribute('data-token')).toBe('surface');
-        expect(rows[0].querySelector('.swatches__chip')?.getAttribute('aria-hidden')).toBe('true');
-        expect(rows[0].querySelector('.swatches__name')?.textContent).toBe('surface');
-        expect(rows[0].querySelector('.swatches__value')?.textContent).toBe('var(--surface)');
-        // The palette name follows the cell, so the panel cannot disagree with the
-        // theme the shell is rendering.
-        act(() => view.write<DashboardTheme>(UI_THEME_STATE, 'ink'));
-        expect(screen.getByTestId('settings-palette').getAttribute('aria-label')).toBe('ink palette');
+        expect(
+            Array.from(workspace.children).map((child) => child.getAttribute('data-testid'))
+        ).toEqual(['mode-field']);
+        // No command has run for a surface that has not been touched.
+        expect([...view.calls.keys()]).toEqual([]);
+    });
+
+    it('renders nothing but the mode and base fields while offline', () => {
+        renderWithHarness(<StationSettings />, OFFLINE_SET);
+        const workspace = screen.getByTestId('settings-workspace');
+
+        expect(
+            Array.from(workspace.children).map((child) => child.getAttribute('data-testid'))
+        ).toEqual(['mode-field', 'provider-base-field']);
+    });
+
+    it('ships no skin or palette control in either mode', () => {
+        // R2 removed the theme / spacing / motion groups and the palette list, and R4
+        // keeps those cells INTERNAL — so the surface must not read or write them.
+        for (const seed of [ONLINE, OFFLINE_SET]) {
+            const { container } = renderWithHarness(<StationSettings />, seed);
+
+            expect(screen.queryByTestId('settings-theme-group')).toBeNull();
+            expect(screen.queryByTestId('settings-density-group')).toBeNull();
+            expect(screen.queryByTestId('settings-motion-group')).toBeNull();
+            expect(screen.queryByTestId('settings-palette')).toBeNull();
+            expect(container.querySelectorAll('.settings__group')).toHaveLength(0);
+            expect(container.querySelectorAll('.swatches')).toHaveLength(0);
+
+            cleanup();
+        }
     });
 });
 
 describe('the surface itself', () => {
-    it('owns one workspace root, a heading, and never borrows another surface\'s testid', () => {
+    it('owns one workspace root, no heading, and never borrows another surface\'s testid', () => {
         renderWithHarness(<StationSettings />, OFFLINE_BLANK);
 
         const workspace = screen.getByTestId('settings-workspace');
         expect(workspace.tagName).toBe('SECTION');
         expect(workspace.className).toBe('settings');
-        expect(screen.getByTestId('settings-heading').textContent).toBe('Settings');
+        // The dialog that hosts this panel supplies the labelled title
+        // (SettingsDialog.tsx), so a second "Settings" heading here would be read twice.
+        expect(screen.queryByTestId('settings-heading')).toBeNull();
         // The strip/banner testids belong to NoticeStrip.tsx and ChatStage.tsx, and
         // this surface uses neither.
         expect(screen.queryByTestId('notice-strip')).toBeNull();

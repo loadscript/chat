@@ -60,12 +60,21 @@ export { ModelPicker, PickerField, modelLabel, useModelLabels } from './ModelPic
 export type { PickerFieldProps, PickerOption, ProviderLabelService } from './ModelPicker';
 export { VoiceButton } from './VoiceButton';
 
-// ——— the settings surface (T5) ——————————————————————————————————————————————————
-// StationSettings is the whole panel (mode + offline provider base + skin switches);
-// SettingsPanel exports only its presentational primitives, so a host can reuse the
-// field chrome without inheriting the command wiring. NoticeStrip is the transient
+// ——— the settings surface (T5, simplified by T3) ————————————————————————————————
+// StationSettings is the whole configuration surface: mode + the offline provider
+// base. It has ONE host, the header's dialog (SettingsDialogButton), which is the
+// package's only configuration editor — the inspector column stopped rendering it, so
+// the mode/base controls exist in exactly one place on screen. SettingsDialog is the
+// accessible modal chrome, exported separately because the bar renders the
+// `SettingsDialogButton` wrapper while the dialog tests drive the chrome half directly
+// — NOT because it is a published component: this barrel is package-internal (neither
+// src/dashboard/index.ts nor src/index.ts re-exports ./components), so a host outside
+// @loadscript/chat has no import path to it. Same for the SettingsPanel primitives
+// below, which are reused across this package only; NoticeStrip is the transient
 // counterpart of the stage's error strip.
 export { StationSettings } from './StationSettings';
+export { SettingsDialog, SettingsDialogButton } from './SettingsDialog';
+export type { SettingsDialogProps } from './SettingsDialog';
 export { NoticeStrip } from './NoticeStrip';
 export {
     SettingsField,

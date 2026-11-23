@@ -10,11 +10,16 @@
 //
 // Everything on screen comes out of the composed instance:
 //
-//   brand text + chip <- `layout.brand` service
-//   columns           <- `layout.regions` service (order + accessible labels)
-//   column content    <- the region slot contributions (see pickRegionOwner)
-//   bar chips         <- STATUS_SLOT contributions
-//   skin              <- `ui.theme|density|motion` state -> data-* attributes
+//   bar title          <- `layout.brand` service (ONE versioned title, `compact`)
+//   columns            <- `layout.regions` service (order + accessible labels)
+//   column content     <- the region slot contributions (see pickRegionOwner)
+//   bar chips          <- STATUS_SLOT contributions (nothing registers one today)
+//   bar settings popup <- ./components/SettingsDialog, which owns its open flag
+//   skin               <- `ui.theme|density|motion` state -> data-* attributes
+//
+// The bar projects skin STATE onto attributes and offers no skin control: the product
+// ships one dark theme, so the theme/density cells stay as internal state that an
+// embedder can drive (plugins/theme.ts) while the header stays out of the way.
 //
 // Registering another capability adds a surface with no edit to this file.
 import type { ComponentType } from 'react';
@@ -27,11 +32,9 @@ import {
     SIDEBAR_SLOT,
     STAGE_SLOT,
     STATUS_SLOT,
-    UI_DENSITY_SET_COMMAND,
     UI_DENSITY_STATE,
     UI_MOTION_STATE,
     UI_THEME_STATE,
-    UI_THEME_TOGGLE_COMMAND,
     type BrandSpec,
     type Contribution,
     type DashboardDensity,
@@ -42,7 +45,12 @@ import {
     type StatusValue
 } from './contract';
 import { useDashboardService, useDashboardSlot, useDashboardValue } from './state-hooks';
-import { WorkbenchProvider, useWorkbench } from './workbench';
+import { WorkbenchProvider } from './workbench';
+// The ONE component this file renders directly instead of resolving from a slot: the
+// header is shell chrome, and the configuration popup is chrome too, not a feature
+// competing for a region. It is imported by path rather than through the components
+// barrel so the shell does not pull every feature surface into its module graph.
+import { SettingsDialogButton } from './components/SettingsDialog';
 
 export function WorkstationShell({ instance }: { instance?: Dashboard } = {}) {
     // Two supported wirings, and the difference is only who owns the context:
@@ -140,7 +148,6 @@ function renderContribution(contribution: Contribution<PanelValue>) {
 }
 
 function ShellFrame() {
-    const instance = useWorkbench();
     const brand = useDashboardService<BrandSpec>(LAYOUT_BRAND_SERVICE);
     const regions = useDashboardService<readonly RegionSpec[]>(LAYOUT_REGIONS_SERVICE);
     const statuses = useDashboardSlot<StatusValue>(STATUS_SLOT);
@@ -152,6 +159,9 @@ function ShellFrame() {
     const stage = useDashboardSlot<PanelValue>(STAGE_SLOT);
     const aside = useDashboardSlot<PanelValue>(ASIDE_SLOT);
 
+    // Read-only skin projections. Nothing in the bar mutates them any more (no theme
+    // or density affordance ships), so `instance` is not needed here either — the
+    // values arrive through the state hooks below.
     const theme = useDashboardValue<DashboardTheme>(UI_THEME_STATE);
     const density = useDashboardValue<DashboardDensity>(UI_DENSITY_STATE);
     const motion = useDashboardValue<DashboardMotion>(UI_MOTION_STATE);
@@ -166,8 +176,6 @@ function ShellFrame() {
 
     const declared = [...regions].sort((left, right) => left.order - right.order);
 
-    const nextDensity: DashboardDensity = density === 'compact' ? 'comfortable' : 'compact';
-
     return (
         <div
             className="station"
@@ -181,58 +189,38 @@ function ShellFrame() {
             data-testid="station-root"
         >
             <header className="station__bar" data-testid="station-bar">
-                <h1 className="station__brand">
-                    {/* The two brand strings are ONE heading with two spans, and CSS
-                        picks which one paints: `.station__brand-compact` is
-                        `display: none` at/above 900px, `.station__brand-name` is
-                        hidden below it (styles/base.css). One heading keeps the
-                        document outline identical on both layouts, and the desktop
-                        bar is pixel-unchanged — an unstyled inline span lays out
-                        exactly like the bare text node it replaces. */}
-                    <span className="station__brand-name">{brand.name}</span>
-                    <span className="station__brand-compact" data-testid="station-title">
-                        {brand.compact}
-                    </span>
+                {/* THE ONE TITLE, at every width: `layout.brand.compact` is
+                    "Chat v<X.X.X>", built from the package.json version via
+                    src/version.ts, so the bar needs no separate version chip and no
+                    tagline. It is a bare <h1> with a text node — styles/base.css
+                    truncates it on a phone (`.station__brand` is the
+                    `text-overflow: ellipsis` box) and pushes the controls to the right
+                    edge with `flex: 1 1 auto`. The unused brand fields
+                    (name / tagline / chip / notice) stopped rendering here; they are
+                    metadata the `layout.brand` service still publishes. */}
+                <h1 className="station__brand" data-testid="station-title">
+                    {brand.compact}
                 </h1>
-                <p className="station__tagline">{brand.tagline}</p>
 
-                <div className="station__chips" role="group" aria-label="Station signal">
-                    <span className="chip chip--brand">
-                        <span className="chip__value">{brand.chip}</span>
-                    </span>
-                    {statuses.map((contribution) => {
-                        const Chip: ComponentType = contribution.value.component;
-                        return <Chip key={contribution.id} />;
-                    })}
+                {/* STATUS_SLOT contributions, i.e. live chips. The row renders only
+                    when something registered: the accent-bordered brand chip that used
+                    to guarantee a row of its own is gone with the version, and an empty
+                    labelled group would be announced as an empty region. */}
+                {statuses.length === 0 ? null : (
+                    <div className="station__chips" role="group" aria-label="Station signal">
+                        {statuses.map((contribution) => {
+                            const Chip: ComponentType = contribution.value.component;
+                            return <Chip key={contribution.id} />;
+                        })}
+                    </div>
+                )}
+
+                <div className="station__actions" role="group" aria-label="Station controls">
+                    {/* The configuration popup. Its open flag is local state inside the
+                        component (./components/SettingsDialog.tsx), so the shell stays
+                        out of the dialog's lifecycle and no `chat.*` cell carries it. */}
+                    <SettingsDialogButton />
                 </div>
-
-                <div className="station__actions" role="group" aria-label="Skin controls">
-                    {/* The skin affordances are plain command invocations: the
-                        shell never writes a state cell itself. */}
-                    <button
-                        type="button"
-                        className="btn btn--ghost"
-                        data-testid="theme-toggle"
-                        onClick={() => {
-                            instance.execute<void, DashboardTheme>(UI_THEME_TOGGLE_COMMAND);
-                        }}
-                    >
-                        {theme === 'ink' ? 'Ink' : 'Slate'}
-                    </button>
-                    <button
-                        type="button"
-                        className="btn btn--ghost"
-                        data-testid="density-toggle"
-                        aria-pressed={density === 'compact'}
-                        onClick={() => {
-                            instance.execute<DashboardDensity, DashboardDensity>(UI_DENSITY_SET_COMMAND, nextDensity);
-                        }}
-                    >
-                        {density === 'compact' ? 'Compact' : 'Comfortable'}
-                    </button>
-                </div>
-
-                <p className="station__note">{brand.notice}</p>
             </header>
 
             <main className="station__grid">

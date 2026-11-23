@@ -12,10 +12,16 @@
 // THE FOUR CASES (contract.ts's `SidebarTab` vocabulary, exhaustive):
 //   'agent'    -> AgentWorkspace   (registry list + prompt editor + tool toggles)
 //   'tool'     -> ToolInspector    (registry grid + source editor)
-//   'settings' -> StationSettings  (mode + offline base + skin switches)
-//   'chat'     -> the quiet panel below: a conversation has no inspector. The
-//                 transcript's own details (usage, model, tokens) already live in
-//                 the composer's `token-usage` row and the rail's Settings tab, so
+//   'settings' -> the quiet panel below. It used to render StationSettings, and that
+//                 is exactly why it does not any more: the header's Settings dialog
+//                 (./SettingsDialog.tsx) is now the one configuration editor, and an
+//                 editable copy of the same mode/base controls here would put two
+//                 editors of one cell on screen at the same time. The rail's Settings
+//                 TAB is untouched — its read-only status readout (activity, turns,
+//                 model, tokens, follow-output) still belongs to ChatSidebar.
+//   'chat'     -> the same quiet panel: a conversation has no inspector. The
+//                 transcript's own details (usage, model, tokens) already live in the
+//                 composer's `token-usage` row and the rail's Settings tab, so
 //                 inventing a fourth conversation panel here would duplicate a
 //                 surface that already exists — the oracle's own aside equivalent
 //                 renders nothing for the Chat tab (its aside tabs are Agent /
@@ -26,8 +32,8 @@
 // three owners and two invisible. One wrapper also gives the column its contract
 // testid (`aside-panel`, see the grammar in ../contract.ts:46) and the
 // `.inspector` flex column (styles/base.css, "Region owners") that lets each
-// feature surface keep its own root class (`.agents` / `.tools` / `.settings`),
-// which those files' rules already size.
+// feature surface keep its own root class (`.agents` / `.tools`), which those
+// files' rules already size.
 //
 // THE PHONE DRAWER (R3, added with the mobile shell redesign): at or below 899px
 // this column is the station's SECOND off-canvas panel — the right-hand twin of the
@@ -46,7 +52,6 @@ import {
 } from '../contract';import { useDashboardValue } from '../state-hooks';
 import { useWorkbench } from '../workbench';
 import { AgentWorkspace } from './AgentWorkspace';
-import { StationSettings } from './StationSettings';
 import { ToolInspector } from './ToolInspector';
 // The SAME seam the rail's drawer uses: 'mobile' below `(min-width: 900px)`, which
 // is exactly where styles/base.css turns this column into an off-canvas panel
@@ -55,11 +60,15 @@ import { ToolInspector } from './ToolInspector';
 import { useViewport } from '../viewport';
 import { ChevronRightIcon } from '../../icons';
 
-/** The idle panel's copy — one place, so the wording stays consistent. */
+/**
+ * The idle panel's copy — one place, so the wording stays consistent. `hint` is NOT
+ * part of it: the hint line names the rail tab the column is following ('chat' or
+ * 'settings'), which is the whole point of this column, and hardcoding one of the two
+ * would state something false about the other.
+ */
 const IDLE = {
     title: 'Inspector',
-    hint: 'chat',
-    body: 'This column follows the rail. Pick Agent, Tool or Settings to edit that registry here.'
+    body: "This column follows the rail. Pick Agent or Tool to edit that registry here; configuration is in the header's Settings dialog."
 } as const;
 
 /**
@@ -69,15 +78,16 @@ const IDLE = {
 const surfaceFor = (tab: SidebarTab) => {
     if (tab === 'agent') return <AgentWorkspace />;
     if (tab === 'tool') return <ToolInspector />;
-    if (tab === 'settings') return <StationSettings />;
-    // 'chat': the quiet panel. Reuses the shell's descriptor chrome classes
-    // (`.panel*`, styles/base.css:218-258) because that is exactly the state they
-    // were built for — a column with a title and nothing registered in it.
+    // 'settings' and 'chat' both land here. For 'settings' it is a deliberate hand-off
+    // (the header's dialog owns configuration, see the header note); for 'chat' it is
+    // the pre-existing quiet panel. Both reuse the shell's descriptor chrome classes
+    // (`.panel*`, styles/base.css:218-258) because that is exactly the state they were
+    // built for — a column with a title and nothing registered in it.
     return (
         <section className="panel" data-testid="inspector-idle" aria-label="Inspector">
             <header className="panel__head">
                 <h2 className="panel__title">{IDLE.title}</h2>
-                <span className="panel__hint">{IDLE.hint}</span>
+                <span className="panel__hint">{tab}</span>
             </header>
             <div className="panel__body">
                 <p className="panel__empty">{IDLE.body}</p>

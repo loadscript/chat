@@ -31,10 +31,16 @@
             *::after {
                 box-sizing: border-box;
             }
-            /* Both skins exist (ink dark, slate light) and the theme plugin reads
-               prefers-color-scheme, so the document hint stays dual. */
+            /* The station boots DARK at the normal entry point: the theme plugin's
+               `readInitialTheme` is always 'ink' (src/dashboard/plugins/theme.ts), so
+               `prefers-color-scheme` no longer picks the palette (T3). The document
+               hint matches that, otherwise the browser paints light-native form
+               controls, <option> popups and scrollbars behind a dark skin until the
+               React tree mounts. A host that still applies the retained Slate palette
+               (the `ui.theme` command) overrides this with `color-scheme: light` on
+               `.station[data-theme='slate']` (src/dashboard/styles/tokens.css). */
             :root {
-                color-scheme: light dark;
+                color-scheme: dark;
             }
             body {
                 margin: 0;

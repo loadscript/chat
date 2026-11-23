@@ -10,7 +10,10 @@
 //      in the framework's deterministic order (layout -> theme -> the chat set ->
 //      the add-ons, with the chat core before everything that resolves its cells);
 //   3. the skin cells default to ink/comfortable/full with NO matchMedia (jsdom),
-//      i.e. the prefers() fallback really does land on the documented default;
+//      i.e. the prefers() fallback really does land on the documented default, AND
+//      stay ink when the OS asks for a light scheme (T3: the header has no theme
+//      control, so nothing may flip the station to the light palette behind the
+//      operator's back);
 //   4. each region channel holds the order-0 layout descriptor AND its real owner,
 //      and the owner is what renders (the winner-takes-region rule documented in
 //      WorkstationShell.tsx:62-81 and plugins/surfaces.ts's band table);
@@ -25,7 +28,7 @@
 //      act(), so that throw would fail this test directly.
 import { StrictMode } from 'react';
 import type { DashboardPlugin } from '@underload/dashboard';
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as dashboardBarrel from './index';
 import {
@@ -36,8 +39,10 @@ import {
     LAYOUT_STAGE_PLACEHOLDER,
     SIDEBAR_SLOT,
     STAGE_SLOT,
+    UI_DENSITY_SET_COMMAND,
     UI_DENSITY_STATE,
     UI_MOTION_STATE,
+    UI_THEME_SET_COMMAND,
     UI_THEME_STATE,
     type BrandSpec,
     type DashboardDensity,
@@ -171,6 +176,28 @@ describe('createChatDashboard (composition)', () => {
         instance.dispose();
     });
 
+    it('boots dark even when the OS asks for a light scheme (R4)', () => {
+        // The simplified header ships NO theme control, so an OS light preference can
+        // no longer flip the station to 'slate' — the operator would have no way back.
+        // The reduced-motion probe is still honoured, which is what `matches` is keyed
+        // on here: only the light-scheme query answers true.
+        const listeners = new Set<() => void>();
+        vi.stubGlobal('matchMedia', (query: string) => ({
+            matches: query.includes('prefers-color-scheme: light'),
+            media: query,
+            addEventListener: (_type: string, cb: () => void) => listeners.add(cb),
+            removeEventListener: (_type: string, cb: () => void) => listeners.delete(cb)
+        }));
+
+        const instance = createChatDashboard();
+        try {
+            expect(instance.state<DashboardTheme>(UI_THEME_STATE).get()).toBe('ink');
+        } finally {
+            instance.dispose();
+            vi.unstubAllGlobals();
+        }
+    });
+
     it('contributes the layout fallback plus the real owner for every region channel', () => {
         // T6: the core's 10/20/30 placeholders are gone (components/Placeholder*.tsx
         // deleted), so each channel is exactly the order-0 descriptor plus its owner
@@ -240,37 +267,106 @@ describe('WorkstationShell', () => {
         expect(screen.getByTestId('region-sidebar').querySelector('[data-testid="sidebar"]')).not.toBeNull();
         expect(screen.getByTestId('region-stage').querySelector('[data-testid="stage"]')).not.toBeNull();
         expect(screen.getByTestId('region-aside').querySelector('[data-testid="aside-panel"]')).not.toBeNull();
-        expect(screen.getByTestId('station-bar').textContent).toContain('Chat Assistant');
+        // R1: the bar's ONE text is the versioned title — no tagline, no notice and no
+        // second copy of the version in a chip, so the bar's whole text content is the
+        // title itself.
+        expect(screen.getByTestId('station-bar').textContent).toBe(`Chat v${APP_VERSION}`);
 
         instance.dispose();
     });
 
-    it('publishes the one-line phone title next to the desktop wordmark', () => {
-        // R3: the <=899px bar is a single line reading `Chat v<X.X.X>`. The shell
-        // renders BOTH brand strings inside the one h1 and lets CSS pick (see
-        // WorkstationShell.tsx:184-196 and styles/base.css's 899px block), so what
-        // this pins is that both strings exist and that the compact one is the
-        // version the chip carries.
+    it('says the version once, in the title, and offers no skin control (R1, R2)', () => {
         const instance = createChatDashboard();
-        render(<WorkstationShell instance={instance} />);
+        const { container } = render(<WorkstationShell instance={instance} />);
 
+        // The title is one <h1> with one text node — the two-span wordmark/compact pair
+        // (and the CSS that picked between them) is gone, so no layout shows a second
+        // version string.
         const title = screen.getByTestId('station-title');
-        expect(title.className).toBe('station__brand-compact');
+        expect(title.tagName).toBe('H1');
+        expect(title.className).toBe('station__brand');
         expect(title.textContent).toBe(`Chat v${APP_VERSION}`);
-        // One heading, two spans: the h1 is shared, so the document outline does
-        // not change between the two layouts.
-        expect(title.parentElement?.className).toBe('station__brand');
-        expect(title.parentElement?.tagName).toBe('H1');
-        expect(title.parentElement?.querySelector('.station__brand-name')?.textContent).toBe(
-            'Chat Assistant'
-        );
+        expect(title.childNodes).toHaveLength(1);
 
-        // Both strings come from the same `layout.brand` service, so the phone
-        // title can never drift from the desktop chip.
+        // The removed chrome is absent by testid AND by class, at both layouts (CSS is
+        // never rendered in this suite, so the elements themselves are the evidence).
+        expect(screen.queryByTestId('theme-toggle')).toBeNull();
+        expect(screen.queryByTestId('density-toggle')).toBeNull();
+        expect(container.querySelector('.station__tagline')).toBeNull();
+        expect(container.querySelector('.station__note')).toBeNull();
+        expect(container.querySelector('.chip--brand')).toBeNull();
+        // Nothing contributes to STATUS_SLOT, so the chip row is not rendered at all
+        // (an empty labelled group would be announced as an empty region).
+        expect(container.querySelector('.station__chips')).toBeNull();
+
+        // The unused brand fields stay PUBLISHED (BrandSpec is a contract) while the bar
+        // renders only `compact`, so a host can still read the wordmark.
         const brand = instance.service<BrandSpec>(LAYOUT_BRAND_SERVICE);
+        expect(brand.compact).toBe(`Chat v${APP_VERSION}`);
         expect(brand.chip).toBe(`v${APP_VERSION}`);
-        expect(brand.compact).toBe(`Chat ${brand.chip}`);
+        expect(brand.name).toBe('Chat Assistant');
 
+        instance.dispose();
+    });
+
+    it('wires the bar to one configuration dialog (R3)', () => {
+        const instance = createChatDashboard();
+        const view = render(<WorkstationShell instance={instance} />);
+
+        const trigger = screen.getByTestId('settings-button');
+        expect(trigger.getAttribute('aria-label')).toBe('Settings');
+        expect(trigger.getAttribute('aria-haspopup')).toBe('dialog');
+        expect(trigger.getAttribute('aria-expanded')).toBe('false');
+        // Closed: no dialog anywhere, and the configuration surface does not exist in
+        // the tree — neither in the bar nor in the aside (R5's other half).
+        expect(screen.queryByTestId('settings-dialog')).toBeNull();
+        expect(screen.queryByTestId('settings-workspace')).toBeNull();
+
+        fireEvent.click(trigger);
+
+        expect(trigger.getAttribute('aria-expanded')).toBe('true');
+        const dialog = screen.getByTestId('settings-dialog');
+        expect(dialog.getAttribute('role')).toBe('dialog');
+        expect(dialog.getAttribute('aria-modal')).toBe('true');
+        const titleId = dialog.getAttribute('aria-labelledby');
+        expect(titleId).toBeTruthy();
+        expect(document.getElementById(titleId ?? '')?.textContent).toBe('Settings');
+        // The real composed graph is behind the dialog: the mode control shows the
+        // live `chat.mode` value, and the offline-only base field stays hidden.
+        expect((within(dialog).getByTestId('mode-select') as HTMLSelectElement).value).toBe('online');
+        expect(within(dialog).queryByTestId('provider-base-field')).toBeNull();
+
+        // A second click of the trigger toggles it shut.
+        fireEvent.click(trigger);
+        expect(trigger.getAttribute('aria-expanded')).toBe('false');
+        expect(screen.queryByTestId('settings-dialog')).toBeNull();
+
+        view.unmount();
+        instance.dispose();
+    });
+
+    it('projects the skin cells it no longer offers controls for (R4)', () => {
+        // The theme/density cells stay in the contract as internal state; the bar lost
+        // its Ink/Comfortable buttons but keeps the projections, so an embedder driving
+        // a command still repaints the station.
+        const instance = createChatDashboard();
+        const view = render(<WorkstationShell instance={instance} />);
+        const root = screen.getByTestId('station-root');
+
+        expect(root.getAttribute('data-theme')).toBe('ink');
+        expect(root.getAttribute('data-density')).toBe('comfortable');
+
+        act(() => {
+            instance.execute<DashboardTheme, DashboardTheme>(UI_THEME_SET_COMMAND, 'slate');
+        });
+        expect(root.getAttribute('data-theme')).toBe('slate');
+
+        act(() => {
+            instance.execute<DashboardDensity, DashboardDensity>(UI_DENSITY_SET_COMMAND, 'compact');
+        });
+        expect(root.getAttribute('data-density')).toBe('compact');
+
+        view.unmount();
         instance.dispose();
     });
 
@@ -296,25 +392,6 @@ describe('WorkstationShell', () => {
         // read of a disposed state on React's next pass surfaces as an unhandled
         // `disposed` DashboardError in the suite (the StrictMode case below unmounts first
         // for exactly this reason).
-        view.unmount();
-        instance.dispose();
-    });
-
-    it('switches the skin through the ui.theme.toggle command', () => {
-        const instance = createChatDashboard();
-        const view = render(<WorkstationShell instance={instance} />);
-
-        expect(instance.state<DashboardTheme>(UI_THEME_STATE).get()).toBe('ink');
-        act(() => {
-            screen.getByTestId('theme-toggle').click();
-        });
-
-        expect(instance.state<DashboardTheme>(UI_THEME_STATE).get()).toBe('slate');
-        expect(screen.getByTestId('station-root').getAttribute('data-theme')).toBe('slate');
-        expect(screen.getByTestId('theme-toggle').textContent).toBe('Slate');
-
-        // Unmount before dispose (see the case above): no live subscription outlives the
-        // dashboard it reads from.
         view.unmount();
         instance.dispose();
     });

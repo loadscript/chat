@@ -22,6 +22,10 @@ import { Meta } from '@storybook/react';
 import { $expect, $screen, asTestStory } from '@presource/test';
 import { styledComponent } from '@presource/react';
 import { ChatAssistantApp } from './dashboard/ChatAssistantApp';
+// The same single source the station title is built from (package.json `version` via
+// the `__APP_VERSION__` define, see src/version.ts). Asserting against `APP_VERSION`
+// rather than a literal is what keeps this play honest when the version is bumped.
+import { APP_VERSION } from './version';
 
 // The two non-resolving endpoints, spelled out rather than imported from
 // plugins/harness.ts: that module pulls `vi` from vitest, and a story bundle has no
@@ -73,6 +77,7 @@ export const Default = asTestStory(async () => {
     await $screen.findByTestId('sidebar');
     await $screen.findByTestId('transcript');
     await $screen.findByTestId('composer-input');
-    // The bar's brand line is the station's own heading.
-    await $expect.text('Chat Assistant');
+    // The bar's title is the station's own heading, and it carries the version:
+    // "Chat v<X.X.X>" from package.json, via src/version.ts (T1/R1).
+    await $expect.text(`Chat v${APP_VERSION}`);
 });

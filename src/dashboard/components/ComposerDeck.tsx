@@ -1,13 +1,23 @@
-// ComposerDeck — the composer column: [Agents][Model] line, the auto-growing
-// textarea with the docked voice mic and focus-gated send arrow, and the token
-// usage line.
+// ComposerDeck — the composer column: ONE metadata line ([Agents][Model] pickers
+// on the left, the `<count> Tokens` counter flush right), the auto-growing textarea
+// with the docked voice mic and focus-gated send arrow, and nothing else.
+//
+// THE METADATA LINE: the token counter used to be its own row under the pickers,
+// labelled `Total tokens: N`. It is now the tail of the picker line — the label was
+// redundant (the word "Tokens" travels with the number) and the second row cost the
+// composer height it does not have on a phone. `.composer__meta` is the flex track
+// that puts it there (styles/composer.css).
+//
+// NO HELP LINE: the `Enter sends, Shift+Enter adds a newline` hint is gone by
+// request, and with it the "Generating —" copy that shared the element; the stop
+// control already says what it does through its own `aria-label`/`title`.
 //
 // BEHAVIOR ORACLE (read-only): src/components/ChatAssistantApp.tsx
 //   - `resizeMessageInput` border-box height math   2421-2439
 //   - Enter-to-send / Shift+Enter-newline / IME gate  5179-5192
 //   - focus-gated send arrow + focus-within rules    5081-5090, 5222-5241
 //   - voice mic docked left, always visible          5205-5221
-//   - `Total tokens: N` usage line                   5169-5171
+//   - the token counter (was its own `Total tokens: N` row) 5169-5171
 //   - the picker row above the input                 5093-5168
 //
 // THE HEIGHT MATH (the part that is easy to get wrong): the field is
@@ -153,11 +163,18 @@ export function ComposerDeck() {
             onFocus={() => setFocused(true)}
             onBlur={handleBlur}
         >
-            <ModelPicker />
+            {/* ONE metadata line: ModelPicker keeps the left edge (agent, then
+                model) and the counter is the last flex track, so `margin-left:
+                auto` in composer.css parks it on the right edge of the composer.
+                The count stays dynamic — `chat.usage` is null until a turn
+                reports a usage frame, and 0 is what the operator sees then. */}
+            <div className="composer__meta">
+                <ModelPicker />
 
-            <p className="composer__usage" data-testid="token-usage">
-                Total tokens: {usage?.total_tokens ?? 0}
-            </p>
+                <p className="composer__usage" data-testid="token-usage">
+                    {usage?.total_tokens ?? 0} Tokens
+                </p>
+            </div>
 
             <div className="composer__field">
                 {/* Voice mic: always visible (unlike the focus-gated arrow),
@@ -212,12 +229,6 @@ export function ComposerDeck() {
                     )
                 )}
             </div>
-
-            <p className="composer__help">
-                {sending
-                    ? 'Generating — the stop control cancels the in-flight reply'
-                    : 'Enter sends, Shift+Enter adds a newline'}
-            </p>
         </form>
     );
 }

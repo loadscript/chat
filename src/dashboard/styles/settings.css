@@ -1,27 +1,37 @@
 /*
- * Settings — mode switch (online/offline), provider base, skin switches, palette.
- * OWNER: src/dashboard/components/StationSettings.tsx + SettingsPanel.tsx. Every
- * rule is scoped under `.station` and reads tokens.css; nothing here hardcodes a
- * colour or a metric, so `.station[data-theme|data-density]` repaints this panel
- * with no rule change (tokens.css:54-79).
+ * Settings — the configuration surface (mode + offline provider base) and the header
+ * dialog that hosts it.
  *
- * Vocabulary (the stub list first, then the extensions this surface emits):
+ * OWNERS: src/dashboard/components/StationSettings.tsx + SettingsPanel.tsx (the
+ * fields) and SettingsDialog.tsx (the popup chrome). Every rule is scoped under
+ * `.station` and reads tokens.css; nothing here hardcodes a colour or a metric, so
+ * `.station[data-theme|data-density]` repaints this panel with no rule change
+ * (tokens.css:54-79).
+ *
+ * Vocabulary:
  *   .settings                    the column, data-testid="settings-workspace"
- *   .settings__group             a labelled button set (role="group")
- *   .settings__row               a key/value readout row (label + control side by side)
- *   .swatches                    the live palette list, data-testid="settings-palette"
- *   --- extensions (emitted by SettingsPanel.tsx / StationSettings.tsx) ---
  *   .settings__title             the panel heading (only when the host has no chrome)
  *   .settings__field             the <label> wrapper: caption above control
  *   .settings__label             the caption line inside the field
  *   .settings__control           the native <select>/<input> (shares the .field primitive)
- *   .settings__note              muted guidance copy (mode-note, offline-endpoint-hint)
+ *   .settings__note              muted guidance copy (SettingsNote primitive)
+ *   .settings__group             a labelled button set (role="group")
  *   .settings__group-label       the group caption above its buttons
  *   .settings__options           the button row inside a group
- *   .swatches__row               one token row (chip + name + reference)
- *   .swatches__chip              the swatch, tinted by [data-token]
- *   .swatches__name              the token name, uppercased
- *   .swatches__value             the `var(--token)` reference it resolves
+ *   .settings__row               a key/value readout row (label + control side by side)
+ *   --- the configuration dialog (SettingsDialog.tsx) ---
+ *   .settings-dialog             the fixed, centred panel (role="dialog")
+ *   .settings-dialog__backdrop   the dismiss target behind it (data-testid ...-backdrop)
+ *   .settings-dialog__head       title row + close control
+ *   .settings-dialog__title      the heading the panel is labelled by
+ *   .settings-dialog__close      the icon-button dismissal (data-testid ...-close)
+ *   .settings-dialog__body       the scrollable content area
+ *
+ * WHAT THIS FILE USED TO CARRY, AND WHERE IT WENT: the palette swatch list
+ * (`.swatches*` and its `--swatch-size` token) is gone — the product ships one dark
+ * theme and no skin switch, so there is no live palette to print (T3). The group,
+ * note and row rules stay: SettingsPanel.tsx still exports those primitives for a
+ * host, and removing their CSS would strand them.
  *
  * WHY THE FIELD STACKS VERTICALLY (behavior oracle ChatAssistantApp.tsx:758-800):
  * `SettingsField` is a real <label> around its control, so the caption is part of the
@@ -29,11 +39,29 @@
  * caption on its own line at every width — a base URL is long enough that a side
  * label would push the value off the visible field on a phone.
  *
- * WHY THE SWATCH IS CSS-TINTED, not inline-styled: the example (workstation.css:646)
- * reads its palette from a `theme.palettes` service and paints the chip inline. This
- * skin has no such service — the palette IS tokens.css — so `[data-token]` selects
- * `background: var(--token)` and the chip can never disagree with the theme on screen.
+ * WHY THE DIALOG IS FIXED, CENTRED BY MARGINS, AND NOT A DRAWER: the configuration
+ * popup has to work over any column at any width without owning one, so it is
+ * `position: fixed` and centred by `inset: 0; margin: auto` on a definite-size box.
+ * That spelling adds no wrapper element and no `transform`, which matters: a
+ * transformed box is the containing block of every fixed descendant (the trap
+ * documented at sessions.css:48-50 for the drawers), and the dialog must stay pinned
+ * to the viewport no matter what it is rendered next to.
  */
+
+/* ——— Scrim wash ————————————————————————————————————————————————————————————— */
+
+/* SKIN-LOCAL TOKEN, declared on `.station` (not in a media block) because the dialog
+   is reachable at every width: `--aside-scrim` (base.css) exists only below the 900px
+   seam and `--rail-scrim` (sessions.css) is scoped to `.rail`. The two values mirror
+   that per-theme pair for the reason documented at sessions.css:401-406 — one wash
+   cannot read as "dimmed" over both the dark and the light palette. */
+.station {
+    --dialog-scrim: rgba(5, 14, 18, 0.62);
+}
+
+.station[data-theme='slate'] {
+    --dialog-scrim: rgba(18, 38, 44, 0.35);
+}
 
 /* ——— Column —————————————————————————————————————————————————──────────────── */
 
@@ -46,9 +74,6 @@
        readable measure, so a wide aside shows a compact panel rather than one input
        stretched 900px wide. */
     max-width: 520px;
-    /* SKIN-LOCAL TOKEN (used nowhere else): the swatch box size. tokens.css has no
-       swatch entry, and the row grid needs the same number twice. */
-    --swatch-size: 14px;
 }
 
 .station .settings__title {
@@ -79,7 +104,7 @@
     overflow-wrap: anywhere;
 }
 
-/* `.field` (base.css:264-287) owns the surface, padding and focus ring; this rule
+/* `.field` (base.css) owns the surface, padding and focus ring; this rule
    only stops a long base URL from stretching the column. */
 .station .settings__control {
     width: 100%;
@@ -101,7 +126,7 @@
     overflow-wrap: anywhere;
 }
 
-/* ——— Segmented groups (theme / spacing / motion) ——————————————————————— */
+/* ——— Segmented groups (the SettingsGroup / SettingsOption primitives) ——————— */
 
 .station .settings__group {
     display: flex;
@@ -135,73 +160,96 @@
     font-size: 12px;
 }
 
-/* ——— Palette swatches ——————————————————————————————————————————————————— */
+/* ——— The configuration dialog ————————————————————————————————————————————— */
 
-.station .swatches {
+/* THE DISMISS TARGET. A SIBLING of the panel, never its parent — the same reason the
+   rail's and the inspector's scrims are siblings (ChatSidebar.tsx, ChatInspector.tsx):
+   the panel paints above its own dismiss target, and one box cannot both cover the
+   viewport and hold the centred content. It is a <button> (keyboard-dismissible),
+   hence the reset — the same shape as `.rail__scrim` and `.inspector__scrim`. */
+.station .settings-dialog__backdrop {
+    position: fixed;
+    inset: 0;
+    /* LITERAL z-index pair, 40 under the panel's 41: both sit ABOVE the phone
+       drawers' 20 and their corner controls' 30, so the popup owns the screen while
+       it is open (the z-index-token trap is documented at sessions.css:48-50). */
+    z-index: 40;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: var(--dialog-scrim);
+    cursor: pointer;
+}
+
+.station .settings-dialog {
+    position: fixed;
+    /* `inset: 0` + `margin: auto` on a box with a definite width and a
+       fit-content height is the centring: no wrapper element, no transform. */
+    inset: 0;
+    z-index: 41;
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    margin: 4px 0 0;
-    padding: 0;
-    list-style: none;
-}
-
-.station .swatches__row {
-    display: grid;
-    grid-template-columns: var(--swatch-size) minmax(0, 1fr) auto;
-    gap: 8px;
-    align-items: center;
-    font-size: 11px;
-}
-
-.station .swatches__chip {
-    width: var(--swatch-size);
-    height: var(--swatch-size);
+    width: min(420px, calc(100% - 32px));
+    height: fit-content;
+    max-height: calc(100% - 32px);
+    margin: auto;
     border: 1px solid var(--line);
-    border-radius: 3px;
+    border-radius: var(--radius);
+    background: var(--raised);
+    box-shadow: 0 12px 32px var(--dialog-scrim);
 }
 
-.station .swatches__name {
+/* The panel takes focus on open (tabIndex={-1} in SettingsDialog.tsx) so its
+   accessible name is announced. The outline is INSET (`-2px`) because the panel's own
+   box clips nothing but a ring drawn outside it would sit against the backdrop. */
+.station .settings-dialog:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+}
+
+.station .settings-dialog__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px var(--pad);
+    border-bottom: 1px solid var(--line);
+}
+
+/* Same caption language as `.panel__title` / `.settings__title`: the dialog is
+   chrome, so its heading is a small caps label, not the 17px bar wordmark. */
+.station .settings-dialog__title {
+    margin: 0;
     color: var(--muted);
-    letter-spacing: 0.08em;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
     text-transform: uppercase;
 }
 
-.station .swatches__value {
-    color: var(--text);
-    /* The reference is code-shaped text, so it must not be re-flowed mid-token. */
-    white-space: nowrap;
-    overflow-wrap: anywhere;
+/* The close control is the shared icon-button primitive (`.btn--icon`, base.css);
+   this only drops its frame so the head reads as a title row with a glyph. */
+.station .settings-dialog__close {
+    border-color: transparent;
 }
 
-/* The token each swatch demonstrates, resolved from the ACTIVE theme's custom
-   properties — the list is identical in both themes, the colours are not. */
-.station .swatches__chip[data-token='surface'] {
-    background: var(--surface);
+.station .settings-dialog__body {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: var(--pad);
+    /* min-height: 0 + overflow: the dialog is inside a viewport-locked station, so a
+       long body scrolls inside the panel instead of pushing it past the viewport. */
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
 }
 
-.station .swatches__chip[data-token='raised'] {
-    background: var(--raised);
-}
-
-.station .swatches__chip[data-token='line'] {
-    background: var(--line);
-}
-
-.station .swatches__chip[data-token='text'] {
-    background: var(--text);
-}
-
-.station .swatches__chip[data-token='muted'] {
-    background: var(--muted);
-}
-
-.station .swatches__chip[data-token='accent'] {
-    background: var(--accent);
-}
-
-.station .swatches__chip[data-token='warn'] {
-    background: var(--warn);
+/* The dialog is the settings column's ONLY host now, so the measure cap belongs to
+   the dialog's own width rather than to `.settings`; the column fills the body. */
+.station .settings-dialog__body .settings {
+    width: 100%;
+    max-width: none;
 }
 
 /* ——— Responsive ——————————————————————————————————————————————————————— */
@@ -218,7 +266,7 @@
 
 /* Phone width: the settings column is one of three stacked rows, so the measure cap
    goes away and the field takes the full width it is given. 899px matches the
-   station grid's own flip (base.css:397), so the stacking and the cap removal are
+   station grid's own flip (base.css), so the stacking and the cap removal are
    one and the same crossing. */
 @media (max-width: 899px) {
     .station .settings {
@@ -227,5 +275,13 @@
 
     .station .settings__options .btn {
         flex: 1 1 auto;
+    }
+
+    /* A phone has no width to spare for a 420px column: the dialog keeps the same
+       gutter the desktop box already reserves (16px), and the cap on its height is
+       what lets the body scroll under a short keyboard-opened viewport. */
+    .station .settings-dialog {
+        width: calc(100% - 24px);
+        max-height: calc(100% - 24px);
     }
 }

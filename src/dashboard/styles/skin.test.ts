@@ -32,6 +32,14 @@ const skinFiles = (): string[] =>
 const readSkin = (name: string): string => readFileSync(join(SKIN_DIR, name), 'utf-8');
 
 /**
+ * A stylesheet with every comment removed. `narrowBlockIn` does this internally because
+ * the skin documents its decisions BETWEEN declarations; the regex-based checks below
+ * need the same treatment, or a comment that merely mentions `transform` would decide a
+ * rule's assertion.
+ */
+const declarationsOf = (name: string): string => readSkin(name).replace(/\/\*[\s\S]*?\*\//g, '');
+
+/**
  * Every NARROW-layout flip one stylesheet declares, i.e. the px values inside a
  * `@media (max-width: ...)`. Deliberately not a bare `max-width:` scan: a measure
  * cap (settings.css `.settings { max-width: 520px }`) or a text ellipsis bound
@@ -162,11 +170,9 @@ describe('the skin agrees with the viewport seam', () => {
                 ".station[data-theme='slate']",
                 '.station__bar',
                 '.station__brand',
-                '.station__brand-compact',
-                '.station__brand-name',
+                '.station__chips',
                 '.station__grid',
-                '.station__region--sidebar, .station__region--aside',
-                '.station__tagline, .station__chips, .station__actions, .station__note'
+                '.station__region--sidebar, .station__region--aside'
             ].sort()
         );
 
@@ -186,17 +192,21 @@ describe('the skin agrees with the viewport seam', () => {
         expect(rules[".station[data-density='compact']"]).toBe('--gap: 6px; --pad: 10px');
 
         // THE BAR: one line, an ellipsised title, and the room for the two fixed
-        // corner controls. `nowrap` is the single-line guarantee; the four hidden
-        // children are the other half of it.
+        // corner controls. `nowrap` is the single-line guarantee. T3 left the phone bar
+        // TWO children — the versioned title and the configuration button — so the chip
+        // row is the only child still hidden below the seam, and the title's truncation
+        // now lives on `.station__brand` itself (the name/compact span pair, and the
+        // display:none rules that used to choose between them, are gone).
         expect(rules['.station__bar']).toContain('flex-wrap: nowrap');
         expect(rules['.station__bar']).toContain('min-height: var(--mobile-bar)');
         expect(rules['.station__bar']).toContain('env(safe-area-inset-top');
         expect(rules['.station__brand']).toContain('text-transform: none');
-        expect(rules['.station__brand-compact']).toContain('text-overflow: ellipsis');
-        expect(rules['.station__brand-name']).toBe('display: none');
-        expect(rules['.station__tagline, .station__chips, .station__actions, .station__note']).toBe(
-            'display: none'
-        );
+        expect(rules['.station__brand']).toContain('font-size: 13px');
+        expect(rules['.station__chips']).toBe('display: none');
+        // The settings control is NOT hidden on a phone: the dialog it opens is the
+        // package's only configuration editor, and the actions row claims the right edge
+        // with its own auto margin (the chip row's margin is the pre-existing pair).
+        expect(rules['.station__actions']).toBeUndefined();
 
         // THE RIGHT DRAWER: the aside mirrors the rail — off the right edge, a full
         // viewport scrim, the same 160ms transform language, literal z-index pair.
@@ -225,11 +235,143 @@ describe('the skin agrees with the viewport seam', () => {
         const footer = narrowBlockIn(readSkin('composer.css'), 899);
         expect(footer['.station .composer']).toContain('border-top: 1px solid var(--line)');
         expect(footer['.station .composer']).toContain('padding: 6px 6px calc(6px + env(safe-area-inset-bottom');
-        expect(footer['.station .composer__help, .station .composer__usage']).toBe('display: none');
+        // The counter is now the ONLY chrome the phone hides. The keyboard hint shared
+        // this rule (`'.station .composer__help, .station .composer__usage'`) went with
+        // the element itself, so the selector names one element and the old pair is gone.
+        expect(footer['.station .composer__usage']).toBe('display: none');
+        expect(footer['.station .composer__help, .station .composer__usage']).toBeUndefined();
 
         // `viewport-fit=cover` is what makes every `env(safe-area-inset-*)` above
         // resolve to a real inset on a notched phone; without it the meta ships 0.
         const document = readFileSync(join(SKIN_DIR, '..', '..', '..', 'index.html'), 'utf-8');
         expect(document).toContain('viewport-fit=cover');
+    });
+});
+
+describe('the composer metadata line: pickers left, token count right', () => {
+    // The other half of the composer's markup contract is CSS, and the skin is never
+    // rendered in this suite — so, exactly as for the breakpoints, the declarations are
+    // read as text. The counter is the LAST track of the composer's single metadata
+    // row and that track claims the free space, which is what makes the live count read
+    // `7925 Tokens` against the right edge, with no label and no row of its own.
+    it('gives the counter the free space at the right edge of the metadata row', () => {
+        const source = readSkin('composer.css');
+        // ONE flex track for the metadata, still free to wrap on a narrow column.
+        expect(/\.station \.composer__meta \{[^}]*display: flex;[^}]*flex-wrap: wrap/.test(source)).toBe(true);
+        // The picker strip is the growing track, so it cannot push the count over the
+        // edge; its labels ellipsise instead (`.composer__pick-text`).
+        expect(/\.composer__row \{[^}]*flex: 1 1 auto/.test(source)).toBe(true);
+        // `margin-left: auto` — the last value of the shorthand — is the alignment
+        // itself; a plain `margin: 0` (the pre-change rule) fails this.
+        expect(/\.station \.composer__usage \{[^}]*margin: 0 0 0 auto/.test(source)).toBe(true);
+    });
+
+    it('ships no trace of the keyboard hint rule', () => {
+        // The element that carried the `Enter sends, Shift+Enter adds a newline` copy is
+        // gone, so a rule for it would be dead weight: the class may not appear in this
+        // stylesheet at all, in either layout.
+        expect(readSkin('composer.css')).not.toContain('composer__help');
+    });
+});
+
+describe('the single header title and its configuration dialog', () => {
+    // T3's header work is invisible to every render test in this suite (no test mounts
+    // a stylesheet), so the declarations are the mechanical evidence: the title box is
+    // the ellipsis box, the settings control survives the phone layout, and the old bar
+    // copy left the skin when it left the markup.
+    it('makes the one title box the truncation box, at every width', () => {
+        // Comments stripped first, exactly as `narrowBlockIn` does: the skin documents
+        // its decisions between declarations, and those words must not decide an
+        // assertion about the declarations.
+        const source = declarationsOf('base.css');
+
+        // R1: one title at every width, so `text-overflow` lives on `.station__brand`
+        // itself rather than on a phone-only span that the desktop rule hid.
+        expect(
+            /\.station__brand \{[^}]*white-space: nowrap;[^}]*text-overflow: ellipsis/.test(source)
+        ).toBe(true);
+        // The version moved out of the chip and into the title, so the actions row has
+        // to claim the right edge on its own — otherwise the settings button would sit
+        // against the title on desktop.
+        expect(/\.station__actions \{[^}]*margin-left: auto/.test(source)).toBe(true);
+
+        // R1/R2: the bar copy and the brand span pair that CSS used to arbitrate between
+        // are gone from the sheet, not merely unrendered. `chip--brand` joins the list for
+        // the same reason (T5): its producer, the bar's version chip, left the markup, so
+        // the rule was styling an element nothing renders.
+        for (const removed of [
+            'station__brand-name',
+            'station__brand-compact',
+            'station__tagline',
+            'station__note',
+            'chip--brand'
+        ]) {
+            expect(source).not.toContain(removed);
+        }
+    });
+
+    it('floats the configuration dialog above the station on both layouts', () => {
+        const source = declarationsOf('settings.css');
+
+        // R3: the popup is a fixed overlay, centred by auto margins (no transform, so it
+        // never becomes the containing block of its own fixed descendants — the trap the
+        // drawers document at sessions.css:48-50), over a full-viewport dismiss target.
+        const panelRule = /\.station \.settings-dialog \{([^}]*)\}/.exec(source);
+        expect(panelRule).not.toBeNull();
+        const panel = (panelRule?.[1] ?? '').replace(/\s+/g, ' ');
+        expect(panel).toContain('position: fixed');
+        expect(panel).toContain('margin: auto');
+        expect(panel).toContain('z-index: 41');
+        expect(panel).not.toContain('transform');
+
+        const backdropRule = /\.station \.settings-dialog__backdrop \{([^}]*)\}/.exec(source);
+        expect(backdropRule).not.toBeNull();
+        const backdrop = (backdropRule?.[1] ?? '').replace(/\s+/g, ' ');
+        expect(backdrop).toContain('position: fixed');
+        expect(backdrop).toContain('inset: 0');
+        // The literal pair: the panel paints above the target that dismisses it, and both
+        // sit over the phone drawers (20) and their corner controls (30).
+        expect(backdrop).toContain('z-index: 40');
+
+        // A phone gets the SAME overlay, narrowed — the phone bar's only settings affordance.
+        expect(narrowBlockIn(source, 899)['.station .settings-dialog']).toContain(
+            'width: calc(100% - 24px)'
+        );
+    });
+
+    it('ships no palette swatch rules (R2)', () => {
+        // The skin has one dark theme and no skin switch, so the live palette list that
+        // used to sit under the settings groups is gone — and its rules would be dead
+        // weight in the sheet, exactly like a rendered-but-inert control. The header
+        // comment may still NAME the removed vocabulary; the rules may not still ship it.
+        const source = declarationsOf('settings.css');
+        expect(source).not.toContain('.station .swatches');
+        expect(source).not.toContain('--swatch-size:');
+    });
+});
+
+describe('the document hint agrees with the dark-only boot (T5)', () => {
+    it('claims a dark document, because the station never boots light', () => {
+        // index.html is read as text for the same reason the stylesheets are: nothing in
+        // this suite renders it. Comments come out FIRST (HTML and CSS alike) — the file
+        // explains the decision in prose that names the light palette, and prose must not
+        // decide an assertion about the declarations.
+        const markup = readFileSync(join(SKIN_DIR, '..', '..', '..', 'index.html'), 'utf-8')
+            .replace(/<!--[\s\S]*?-->/g, '')
+            .replace(/\/\*[\s\S]*?\*\//g, '');
+
+        // T3 made the palette unconditional — `readInitialTheme` returns 'ink'
+        // (../plugins/theme.ts) — so a `light dark` document hint was a promise the UI
+        // never kept: the browser paints light-native form controls, <option> popups and
+        // scrollbars behind a dark station until the React tree mounts and `.station`
+        // sets its own hint (tokens.css). The retained Slate palette still overrides it
+        // per station, which is a rule, not the document default.
+        expect(markup).toContain('color-scheme: dark');
+        expect(markup).not.toContain('light dark');
+
+        // The mobile status-bar tint still names the ink surface, so the two cannot drift
+        // apart silently if the default palette changes (tokens.css `.station`).
+        expect(markup).toContain('name="theme-color" content="#18272f"');
+        expect(declarationsOf('tokens.css')).toContain('--surface: #18272f');
     });
 });

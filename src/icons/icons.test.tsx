@@ -22,6 +22,7 @@ import {
     ForkIcon,
     MenuIcon,
     MicIcon,
+    SettingsIcon,
     SwitchIcon
 } from '.';
 
@@ -52,6 +53,9 @@ const family: ReadonlyArray<readonly [string, ComponentType<{ size?: number }>, 
     ['chevronDown', ChevronDownIcon, `<path d="M6 9l6 6 6-6" ${S}></path>`],
     ['chevronUp', ChevronUpIcon, `<path d="M6 15l6-6 6 6" ${S}></path>`],
     ['switch', SwitchIcon, `<path d="M4 7h16l-3-3" ${S}></path><path d="M20 17H4l3 3" ${S}></path>`],
+    // The bar's configuration glyph (header settings button): gear ring + hub, the
+    // shared Lucide "settings" geometry from the icon package's registry.
+    ['settings', SettingsIcon, `<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" ${S}></path><circle cx="12" cy="12" r="3" ${S}></circle>`],
     ['fork', ForkIcon, `<circle cx="6" cy="5" r="3" ${S}></circle><circle cx="18" cy="5" r="3" ${S}></circle><circle cx="18" cy="19" r="3" ${S}></circle><path d="M6 8v3a5 5 0 0 0 5 5h4" ${S}></path><path d="M18 8v8" ${S}></path>`]
 ];
 
