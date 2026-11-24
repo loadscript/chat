@@ -8,6 +8,13 @@
 // composer height it does not have on a phone. `.composer__meta` is the flex track
 // that puts it there (styles/composer.css).
 //
+// THE COUNTER DOUBLES AS THE INSPECTOR'S PHONE TOGGLE. Below the 900px seam the aside
+// column is an off-canvas drawer (./ChatInspector.tsx), and the corner chevron that
+// gated it is gone by request — so the count is the element that opens it, which costs
+// the phone no chrome at all. It is a real <button> at every width for that reason, and
+// above the seam it is `disabled` with its disclosure attributes off, i.e. a readout.
+// The scrim the aside renders is the dismiss target.
+//
 // NO HELP LINE: the `Enter sends, Shift+Enter adds a newline` hint is gone by
 // request, and with it the "Generating —" copy that shared the element; the stop
 // control already says what it does through its own `aria-label`/`title`.
@@ -46,6 +53,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, FocusEvent, FormEvent, KeyboardEvent } from 'react';
 import {
+    CHAT_ASIDE_OPEN_STATE,
     CHAT_DRAFT_SET_COMMAND,
     CHAT_DRAFT_STATE,
     CHAT_MESSAGE_CANCEL_COMMAND,
@@ -60,8 +68,9 @@ import { useWorkbench } from '../workbench';
 import { ModelPicker } from './ModelPicker';
 import { VoiceButton } from './VoiceButton';
 // The md gate (900px) is owned by the chat core's viewport seam, so the composer's
-// Enter-to-send rule and the rail's drawer cannot drift to different numbers.
-import { isDesktopViewport } from '../viewport';
+// Enter-to-send rule, the rail's drawer and the inspector drawer below it cannot drift
+// to different numbers. `useViewport` is the same seam the two drawers read.
+import { isDesktopViewport, useViewport } from '../viewport';
 import { ChevronRightIcon, CloseIcon } from '../../icons';
 
 // Vertical border thickness of the field (1px top + 1px bottom, matching the
@@ -99,6 +108,12 @@ export function ComposerDeck() {
     const draft = useDashboardValue<string>(CHAT_DRAFT_STATE);
     const status = useDashboardValue<ChatStatus>(CHAT_STATUS_STATE);
     const usage = useDashboardValue<ChatUsage | null>(CHAT_USAGE_STATE);
+    // The counter's second job (see the header note): the flag the inspector column
+    // slides in and out on, read from the same cell that column's auto-close effect
+    // clears above the seam (./ChatInspector.tsx).
+    const asideOpen = useDashboardValue<boolean>(CHAT_ASIDE_OPEN_STATE);
+    const viewport = useViewport();
+    const mobile = viewport === 'mobile';
 
     const fieldRef = useRef<HTMLTextAreaElement | null>(null);
     // Focus-within emulation: the send arrow exists only while focus is inside
@@ -124,6 +139,22 @@ export function ComposerDeck() {
     const send = useCallback(() => {
         instance.execute<void>(CHAT_MESSAGE_SEND_COMMAND);
     }, [instance]);
+
+    /**
+     * Opens or shuts the inspector drawer — the counter's second job below the 900px
+     * seam. The cell is written DIRECTLY, exactly as the two drawer owners write their
+     * flags: contract.ts registers `chat.asideOpen` as state but publishes no
+     * `chat.aside.set` command id, and the core throws `unknown-command` for an
+     * unregistered one (see ./ChatSidebar.tsx's `writeCell` for the same rule).
+     */
+    const toggleAside = () => {
+        // The DOM `disabled` above the seam is what keeps the element out of the tab
+        // order and its click out of the browser; this guard is the same rule stated in
+        // JS, so a synthetic click (a test, an injected event) cannot open a drawer the
+        // desktop layout does not have.
+        if (!mobile) return;
+        instance.state<boolean>(CHAT_ASIDE_OPEN_STATE).set(!asideOpen);
+    };
 
     const submit = (event?: FormEvent<HTMLFormElement>) => {
         // The form is only a keyboard affordance: the page never navigates.
@@ -171,9 +202,27 @@ export function ComposerDeck() {
             <div className="composer__meta">
                 <ModelPicker />
 
-                <p className="composer__usage" data-testid="token-usage">
+                {/* THE COUNTER — and, below the 900px seam, the inspector drawer's only
+                    control. The column lost its corner chevron (./ChatInspector.tsx), so
+                    the count now opens it: `aria-controls` names `aside-panel`, which the
+                    aside renders in the OTHER region, and ids are document-global. Above
+                    the seam the column is a static grid track and the element is the plain
+                    readout it always was — `disabled` takes it out of the tab order, and
+                    the three disclosure attributes are dropped rather than advertising a
+                    control that cannot be used there. The accessible name stays the COUNT
+                    (an `aria-label` would have replaced it and hidden the number). */}
+                <button
+                    type="button"
+                    className="composer__usage"
+                    data-testid="token-usage"
+                    disabled={!mobile}
+                    aria-expanded={mobile ? asideOpen : undefined}
+                    aria-controls={mobile ? 'aside-panel' : undefined}
+                    title={mobile ? 'Toggle inspector' : undefined}
+                    onClick={toggleAside}
+                >
                     {usage?.total_tokens ?? 0} Tokens
-                </p>
+                </button>
             </div>
 
             <div className="composer__field">

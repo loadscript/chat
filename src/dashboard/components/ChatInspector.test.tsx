@@ -4,16 +4,21 @@
 // the station's SECOND off-canvas panel, mirrored from the rail. The assertions are
 // structural and cell-exact, never CSS — no test in this suite can see a stylesheet
 // (vitest stubs CSS requests), so the two things that CAN be pinned are the cell the
-// control writes and the DOM shape the CSS depends on:
+// drawer reads and the DOM shape the CSS depends on:
 //
-//   1. the toggle and the scrim are SIBLINGS of `.inspector`, not descendants. That
-//      is not cosmetic: the panel carries `transform: translateX(105%)`
-//      (styles/base.css, `max-width: 899px`), and a transformed box is the
-//      containing block of every fixed descendant, so a control nested inside it
-//      would ride the panel off-screen instead of staying on the bar's corner;
-//   2. `chat.asideOpen` is the single source of truth — the control writes the cell
-//      directly (contract.ts publishes no `chat.aside.set` command id), the scrim
-//      clears it, and the viewport seam clears it on the crossing back to desktop.
+//   1. the column contributes the PANEL and the SCRIM only, and the scrim is a
+//      SIBLING of `.inspector`, never a descendant. That is not cosmetic: the panel
+//      carries `transform: translateX(-105%)` (styles/base.css, `max-width: 899px`),
+//      and a transformed box is the containing block of every fixed descendant, so a
+//      scrim nested inside it would ride the panel off-screen instead of covering the
+//      viewport;
+//   2. the column owns NO control. Its corner chevron (`aside-toggle`) is gone by
+//      request, and the composer's token counter is what opens the drawer — that
+//      control is pinned in ./ComposerDeck.test.tsx, and both halves agree on the
+//      `aside-panel` id and on `chat.asideOpen`;
+//   3. `chat.asideOpen` is the single source of truth — the scrim clears it, the
+//      viewport seam clears it on the crossing back to desktop, and nothing is ever
+//      dispatched (contract.ts publishes no `chat.aside.set` command id).
 //
 // The tab->surface switch is pinned here too because nothing else in the suite
 // renders ChatInspector through its own file (App.test.tsx only proves the column
@@ -33,9 +38,10 @@ afterEach(() => {
 });
 
 /** The idle panel's copy, verbatim from ChatInspector.tsx — note the ABSENCE of a
- *  `hint` field: the hint line is the rail tab the column is following, so it is one
- *  of 'chat' / 'settings' depending on the cell, and the body no longer offers
- *  "Settings" as something to edit here (T3 moved configuration to the header). */
+ *  `hint` field: the hint line is the rail tab the column is following, and 'settings'
+ *  is the only tab left that renders this panel (the Chat tab got
+ *  ./ConversationInspector.tsx), so the body no longer offers "Settings" as something
+ *  to edit here (T3 moved configuration to the header). */
 const IDLE = {
     title: 'Inspector',
     body: "This column follows the rail. Pick Agent or Tool to edit that registry here; configuration is in the header's Settings dialog."
@@ -44,7 +50,7 @@ const IDLE = {
 const SEED: HarnessSeed = {};
 
 describe('the surface the rail selects', () => {
-    it('renders the idle panel for the chat tab, with the drawer shut', () => {
+    it('renders the conversation readout for the chat tab, with the drawer shut', () => {
         const view = renderWithHarness(<ChatInspector />, SEED);
         const panel = screen.getByTestId('aside-panel');
         expect(panel.className).toBe('inspector');
@@ -54,17 +60,12 @@ describe('the surface the rail selects', () => {
         expect(panel.getAttribute('data-mobile')).toBe('false');
         expect(view.read<boolean>(CHAT_ASIDE_OPEN_STATE)).toBe(false);
 
-        // The quiet panel keeps the shell's descriptor chrome, exactly.
-        expect(screen.getByTestId('inspector-idle').getAttribute('aria-label')).toBe('Inspector');
-        expect(screen.getByTestId('inspector-idle').querySelector('.panel__title')?.textContent).toBe(
-            IDLE.title
-        );
-        expect(screen.getByTestId('inspector-idle').querySelector('.panel__hint')?.textContent).toBe(
-            'chat'
-        );
-        expect(screen.getByTestId('inspector-idle').querySelector('.panel__empty')?.textContent).toBe(
-            IDLE.body
-        );
+        // The rail's DEFAULT tab has a surface of its own now, so the column shows the
+        // conversation (activity, the turn in flight, model / tools / tokens) instead of
+        // explaining its own rule: see ./ConversationInspector.tsx.
+        expect(screen.getByTestId('inspector-chat')).toBeTruthy();
+        // ...and the quiet panel belongs to the one tab with nothing to show here.
+        expect(screen.queryByTestId('inspector-idle')).toBeNull();
     });
 
     it('switches to the agent and tool surface the rail tab names', () => {
@@ -76,11 +77,14 @@ describe('the surface the rail selects', () => {
         for (const [tab, testId] of cases) {
             act(() => view.write<SidebarTab>(CHAT_SIDEBAR_TAB_STATE, tab));
             expect(screen.getByTestId(testId)).toBeTruthy();
-            // The idle panel belongs to the two tabs with nothing to edit here.
+            // The quiet panel belongs to the one tab with nothing to edit here.
             expect(screen.queryByTestId('inspector-idle')).toBeNull();
+            // Switching away from the conversation takes its readout with it: one
+            // surface per column, never two stacked in the drawer.
+            expect(screen.queryByTestId('inspector-chat')).toBeNull();
         }
         act(() => view.write<SidebarTab>(CHAT_SIDEBAR_TAB_STATE, 'chat'));
-        expect(screen.getByTestId('inspector-idle')).toBeTruthy();
+        expect(screen.getByTestId('inspector-chat')).toBeTruthy();
     });
 
     it('hands configuration over to the header: the settings tab renders no editor', () => {
@@ -102,29 +106,29 @@ describe('the surface the rail selects', () => {
 });
 
 describe('the mobile drawer', () => {
-    it('opens and closes chat.asideOpen through the top-right control', () => {
+    it('contributes no control of its own — the composer counter gates the drawer', () => {
         const restore = stubViewport('mobile');
         try {
             const view = renderWithHarness(<ChatInspector />, SEED);
             const panel = screen.getByTestId('aside-panel');
-            const toggle = screen.getByTestId('aside-toggle');
 
-            // THE CONTROL LIVES OUTSIDE THE PANEL (see the header note): it is a
-            // sibling, and the panel's own tree is unchanged by the drawer chrome.
-            expect(toggle.closest('.inspector')).toBeNull();
-            expect(toggle.className).toBe('inspector__menu btn btn--ghost btn--icon');
-            expect(toggle.getAttribute('aria-expanded')).toBe('false');
-            expect(toggle.getAttribute('aria-controls')).toBe('aside-panel');
-            expect(toggle.getAttribute('aria-label')).toBe('Toggle inspector');
+            // THE CHEVRON IS GONE. This column renders the panel and the dismiss target
+            // only; the control that opens the drawer is the composer's `token-usage`
+            // (pinned in ./ComposerDeck.test.tsx), and the id below is what its
+            // `aria-controls` resolves against.
+            expect(screen.queryByTestId('aside-toggle')).toBeNull();
+            expect(document.querySelector('.inspector__menu')).toBeNull();
+            expect(panel.id).toBe('aside-panel');
+            expect(panel.getAttribute('data-open')).toBe('false');
+            expect(panel.getAttribute('data-mobile')).toBe('true');
 
-            fireEvent.click(toggle);
-            expect(view.read<boolean>(CHAT_ASIDE_OPEN_STATE)).toBe(true);
-            expect(panel.getAttribute('data-open')).toBe('true');
-            expect(toggle.getAttribute('aria-expanded')).toBe('true');
-            // The scrim is the only dismiss target, and it too is a sibling.
+            // OPEN — the state the composer's click leaves the cell in. The scrim is the
+            // ONLY dismiss target, and it is a SIBLING of the panel (header note 1).
+            act(() => view.write<boolean>(CHAT_ASIDE_OPEN_STATE, true));
             const scrim = screen.getByTestId('aside-scrim');
             expect(scrim.closest('.inspector')).toBeNull();
             expect(scrim.getAttribute('aria-label')).toBe('Close inspector');
+            expect(panel.getAttribute('data-open')).toBe('true');
 
             fireEvent.click(scrim);
             expect(view.read<boolean>(CHAT_ASIDE_OPEN_STATE)).toBe(false);
@@ -145,8 +149,8 @@ describe('the mobile drawer', () => {
         expect(screen.queryByTestId('aside-scrim')).toBeNull();
         expect(screen.getByTestId('aside-panel').getAttribute('data-mobile')).toBe('false');
 
-        // A click still lands on desktop (the control is CSS-hidden there, but the
-        // test cannot see CSS), and the seam's auto-close clears the flag again.
+        // A flag set from elsewhere (the composer's counter, say) still gets cleared by
+        // the seam's auto-close, so no invisible overlay can latch on the widened window.
         act(() => view.write<boolean>(CHAT_ASIDE_OPEN_STATE, true));
         expect(screen.queryByTestId('aside-scrim')).toBeNull();
         expect(view.read<boolean>(CHAT_ASIDE_OPEN_STATE)).toBe(false);

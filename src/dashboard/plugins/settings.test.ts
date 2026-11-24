@@ -130,6 +130,21 @@ describe('chat.mode.set — the command contract', () => {
         ]);
     });
 
+    it('announces nothing when the operator goes back to the online default', () => {
+        seedSettings('offline', '');
+        instance = composeUnit(cancelCalls);
+        const events = recordEvents(instance, [CHAT_NOTICE_EVENT]);
+
+        instance.execute<ChatMode>(CHAT_MODE_SET_COMMAND, 'online');
+
+        // The switch itself still happens and persists...
+        expect(readPersisted()).toBe('{"mode":"online","providerBase":""}');
+        expect(instance.state<ChatMode>(CHAT_MODE_STATE).get()).toBe('online');
+        // ...but the strip stays clear: online is the default configuration, so its
+        // row said nothing the strip added.
+        expect(payloadsOf(events, CHAT_NOTICE_EVENT)).toEqual([]);
+    });
+
     it('is a complete no-op for the mode that is already live', () => {
         seedSettings('online', 'http://keep.test/v1');
         instance = composeUnit(cancelCalls);

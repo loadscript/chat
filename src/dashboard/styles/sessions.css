@@ -12,7 +12,6 @@
  *   .rail__meta              row secondary line
  *   .rail__footer            the action row pinned under the list ("New chat")
  *   --- extensions (all emitted by the two components above) ---
- *   .rail__bar .rail__label  the rail head + its uppercase caption
  *   .rail__menu              the mobile-only drawer toggle: fixed to the phone
  *                            bar's TOP-LEFT corner, hidden on desktop
  *   .rail__tab.is-active     the selected registry tab
@@ -64,20 +63,10 @@
     --rail-scrim: rgba(5, 14, 18, 0.62);
 }
 
-.station .rail__bar {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.station .rail__label {
-    margin: 0;
-    color: var(--muted);
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-}
+/* NO `.rail__bar` / `.rail__label`: the rail's head line ("Rail") named the layout slot
+   instead of the content, so it was one line of chrome the operator never needed. The
+   column opens on the board's own heading (`.rail__heading`) now, and `.rail`'s `gap`
+   is what spaces it from the panel edge. */
 
 /* The drawer toggle is a mobile affordance: a static column needs no gate. */
 .station .rail__menu {

@@ -1,0 +1,385 @@
+/*
+ * Markdown — the rendered shape of an ASSISTANT reply.
+ *
+ * WHAT THIS FILE OWNS: the typography and colour of sanitized Markdown produced by
+ * `markdownHtml` (packages/loadscript/harness/src/frontend/ui/markdown.ts — marked
+ * GFM + DOMPurify + highlight.js), which MessageTurn injects into the
+ * `.msg__markdown` wrapper inside `.msg__text`. User and system turns stay plain text
+ * (MessageTurn.tsx's header), so every rule here is scoped to `.msg__markdown` and
+ * can never reformat a verbatim prompt or a user message.
+ *
+ * WHY THE MARKUP IS NOT IN THIS REPO: the model streams Markdown, and the harness
+ * client already owns a hardened renderer for it (script/event-handler/`javascript:`
+ * stripping, an inert task-list checkbox, link hardening, fenced-code highlighting
+ * with a validated `data-language` label). Re-implementing that boundary here would
+ * be a second security surface; reusing it means the vocabulary below is fixed by
+ * that module fixes the vocabulary below: the wrapper's children
+ * (`p|h1..h6|ul|ol|blockquote|table|hr`),
+ * `.code-block[data-language] > code.hljs.language-*` and the `.hljs-*` token spans.
+ *
+ * COLOUR: layout colours come from tokens.css (`--text`, `--muted`, `--accent`,
+ * `--line`, `--raised`), exactly like the rest of the skin. The syntax palette is
+ * the one exception — highlight.js token colours have no semantic counterpart in the
+ * skin's role tokens, so they are literals here, tuned to read on the code well
+ * (`--surface` mixed to a deeper tone) the way the harness sheet they come from does.
+ * The skin boots dark-only (`readInitialTheme` returns 'ink', see the dark-only boot
+ * block in styles/skin.test.ts), so no light variant of the palette ships.
+ *
+ * EVERYTHING IS UNDER `.station`, like the rest of the skin, so embedding this
+ * stylesheet inside a host page restyles nothing outside the station.
+ */
+
+/* ——— The wrapper ——————————————————————————————————————————————————————— */
+
+.station .msg__markdown {
+    /* The bubble it sits in is `white-space: pre-wrap` (transcript.css `.msg__text`)
+       because a user message is verbatim text. Sanitized Markdown is MARKUP: the
+       newlines between its own tags would paint as blank lines, so the wrapper goes
+       back to normal whitespace and lets the block elements below own the rhythm. */
+    white-space: normal;
+    overflow-wrap: anywhere;
+    font-size: 13px;
+    line-height: 1.6;
+}
+
+/* The first block must not add height above the bubble's own padding, and the last
+   must not add it below — the transcript's density comes from `.msg`, not from the
+   reply's own margins. */
+.station .msg__markdown > :first-child {
+    margin-top: 0;
+}
+
+.station .msg__markdown > :last-child {
+    margin-bottom: 0;
+}
+
+/* ——— Body text ————————————————————————————————————————————————————————— */
+
+.station .msg__markdown p,
+.station .msg__markdown ul,
+.station .msg__markdown ol,
+.station .msg__markdown blockquote,
+.station .msg__markdown pre,
+.station .msg__markdown table {
+    margin: 0 0 10px;
+}
+
+.station .msg__markdown ul,
+.station .msg__markdown ol {
+    padding-left: 22px;
+}
+
+.station .msg__markdown li + li {
+    margin-top: 3px;
+}
+
+.station .msg__markdown li::marker {
+    color: var(--muted);
+}
+
+/* A `tight` list's paragraphs still carry a margin in the emitted HTML; inside a
+   list item it is the gap between two bullets doubled, so the last one goes. */
+.station .msg__markdown li > p {
+    margin-bottom: 4px;
+}
+
+.station .msg__markdown li > p:last-child {
+    margin-bottom: 0;
+}
+
+/* GFM task lists: DOMPurify keeps exactly one form control, a disabled checkbox
+   rebuilt by the sanitizer's own hook. It is inert, so it is styled, never focused. */
+.station .msg__markdown li:has(> input[type='checkbox']) {
+    list-style: none;
+    margin-left: -22px;
+}
+
+.station .msg__markdown li > input[type='checkbox'] {
+    margin: 0 6px 0 0;
+    accent-color: var(--accent);
+    vertical-align: middle;
+}
+
+/* ——— Headings —————————————————————————————————————————————————————————— */
+
+.station .msg__markdown h1,
+.station .msg__markdown h2,
+.station .msg__markdown h3,
+.station .msg__markdown h4,
+.station .msg__markdown h5,
+.station .msg__markdown h6 {
+    margin: 16px 0 8px;
+    color: var(--text);
+    font-weight: 700;
+    line-height: 1.35;
+    letter-spacing: 0.04em;
+}
+
+.station .msg__markdown h1 {
+    font-size: 16px;
+}
+
+.station .msg__markdown h2 {
+    font-size: 15px;
+}
+
+.station .msg__markdown h3 {
+    font-size: 14px;
+}
+
+.station .msg__markdown h4,
+.station .msg__markdown h5,
+.station .msg__markdown h6 {
+    font-size: 13px;
+    color: var(--muted);
+    text-transform: uppercase;
+}
+
+/* A heading that opens the reply needs no gap above it — the bubble's own padding
+   is already the separation. */
+.station .msg__markdown > :first-child:is(h1, h2, h3, h4, h5, h6) {
+    margin-top: 0;
+}
+
+/* ——— Emphasis, links, rules ————————————————————————————————————————————— */
+
+.station .msg__markdown strong {
+    color: var(--text);
+    font-weight: 700;
+}
+
+.station .msg__markdown em {
+    font-style: italic;
+}
+
+.station .msg__markdown del,
+.station .msg__markdown s {
+    color: var(--muted);
+}
+
+.station .msg__markdown a {
+    color: var(--accent);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.station .msg__markdown a:hover {
+    color: var(--text);
+}
+
+.station .msg__markdown a:focus-visible {
+    border-radius: 2px;
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+.station .msg__markdown hr {
+    height: 1px;
+    margin: 14px 0;
+    border: 0;
+    background: var(--line);
+}
+
+.station .msg__markdown blockquote {
+    margin-left: 0;
+    padding: 6px 12px;
+    border-left: var(--rail) solid var(--accent);
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    background: color-mix(in srgb, var(--accent) 6%, var(--surface));
+    color: var(--muted);
+}
+
+.station .msg__markdown blockquote > :last-child {
+    margin-bottom: 0;
+}
+
+/* A quote inside a quote fades its rail so nesting reads as depth rather than as
+   the same tint twice. */
+.station .msg__markdown blockquote blockquote {
+    border-left-color: var(--line);
+    background: transparent;
+}
+
+.station .msg__markdown img {
+    max-width: 100%;
+    border-radius: var(--radius-sm);
+}
+
+/* ——— Code ————————————————————————————————————————————————————————————— */
+
+/* Inline code is the most common semantic span in an answer, so it gets its own
+   accent rather than body colour. `:not(pre) > code` keeps these rules away from a
+   fenced block, whose `.code-block` owns the container styling. */
+.station .msg__markdown :not(pre) > code {
+    padding: 1px 5px;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    background: var(--raised);
+    color: var(--accent);
+    font-family: var(--font);
+    font-size: 0.92em;
+}
+
+/* Code inside a link keeps the link colour: the underline already marks it, and two
+   competing accents on one word read as noise. */
+.station .msg__markdown a > code {
+    border-color: var(--accent);
+    background: transparent;
+    color: inherit;
+}
+
+/* Fenced block. `max-height` + `overflow` is what keeps a 400-line paste from
+   turning one turn into a page; the language caption is generated content, so the
+   label never enters a text selection or a copy. */
+.station .msg__markdown .code-block {
+    max-height: 420px;
+    padding: 10px 12px;
+    overflow: auto;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    /* One step deeper than the bubble, so a fence reads as a surface and not as
+       another paragraph. */
+    background: color-mix(in srgb, var(--surface) 60%, #000);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 12.5px;
+    line-height: 1.6;
+}
+
+.station .msg__markdown .code-block code {
+    display: block;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font-size: inherit;
+    /* A fence is source text: it wraps nowhere, and the block above scrolls. */
+    white-space: pre;
+    tab-size: 4;
+}
+
+.station .msg__markdown .code-block[data-language]::before {
+    content: attr(data-language);
+    position: sticky;
+    left: 0;
+    display: block;
+    width: fit-content;
+    max-width: 100%;
+    margin: 0 0 6px;
+    overflow: hidden;
+    color: var(--muted);
+    font-family: var(--font);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    line-height: 1.6;
+    text-transform: uppercase;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* ——— Tables (GFM) ————————————————————————————————————————————————————— */
+
+/* `display: block` + `overflow` is the wide-table rule: a GFM table with six columns
+   scrolls inside the bubble instead of widening the transcript and pushing the grid
+   out of the viewport-locked station. */
+.station .msg__markdown table {
+    display: block;
+    max-width: 100%;
+    overflow: auto;
+    border-collapse: collapse;
+}
+
+.station .msg__markdown th,
+.station .msg__markdown td {
+    padding: 6px 10px;
+    border: 1px solid var(--line);
+    text-align: left;
+    vertical-align: top;
+}
+
+.station .msg__markdown th {
+    background: var(--raised);
+    color: var(--text);
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+/* Zebra rows: with several columns of prose the eye needs a horizontal guide. */
+.station .msg__markdown tbody tr:nth-child(even) {
+    background: color-mix(in srgb, var(--raised) 35%, transparent);
+}
+
+/* ——— highlight.js token palette ————————————————————————————————————————
+   Decoration, never the only cue: every colour below clears 4.5:1 on the code well.
+   The four that DO have a semantic counterpart in the skin use the token, so a theme
+   switch moves them with the rest of the palette. */
+
+.station .msg__markdown .hljs-comment,
+.station .msg__markdown .hljs-quote {
+    color: var(--muted);
+    font-style: italic;
+}
+
+.station .msg__markdown .hljs-punctuation {
+    color: var(--assistant);
+}
+
+.station .msg__markdown .hljs-deletion {
+    color: var(--danger);
+}
+
+.station .msg__markdown .hljs-built_in,
+.station .msg__markdown .hljs-title.class_,
+.station .msg__markdown .hljs-type {
+    color: #7fdbca;
+}
+
+.station .msg__markdown .hljs-keyword,
+.station .msg__markdown .hljs-selector-tag,
+.station .msg__markdown .hljs-literal,
+.station .msg__markdown .hljs-doctag,
+.station .msg__markdown .hljs-name {
+    color: #c792ea;
+}
+
+.station .msg__markdown .hljs-string,
+.station .msg__markdown .hljs-regexp,
+.station .msg__markdown .hljs-addition,
+.station .msg__markdown .hljs-attribute {
+    color: #a5d6a7;
+}
+
+.station .msg__markdown .hljs-number,
+.station .msg__markdown .hljs-symbol,
+.station .msg__markdown .hljs-bullet,
+.station .msg__markdown .hljs-variable,
+.station .msg__markdown .hljs-template-variable,
+.station .msg__markdown .hljs-link {
+    color: #f2b880;
+}
+
+.station .msg__markdown .hljs-title,
+.station .msg__markdown .hljs-section,
+.station .msg__markdown .hljs-title.function_ {
+    color: #82aaff;
+}
+
+.station .msg__markdown .hljs-attr,
+.station .msg__markdown .hljs-selector-attr,
+.station .msg__markdown .hljs-selector-pseudo,
+.station .msg__markdown .hljs-property,
+.station .msg__markdown .hljs-params {
+    color: #ffcb6b;
+}
+
+.station .msg__markdown .hljs-meta {
+    color: #9ab2be;
+}
+
+.station .msg__markdown .hljs-emphasis {
+    font-style: italic;
+}
+
+.station .msg__markdown .hljs-strong {
+    font-weight: 700;
+}

@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ComponentProps } from 'react';
 import { CHAT_TURN_TOGGLE_COMMAND, type ChatTurn } from '../contract';
 import { MessageTurn, controlsShouldFloat, nextRole, useStickyStrip } from './MessageTurn';
-import { renderWithHarness } from './test-harness';
+import { renderWithHarness, type HarnessSeed } from './test-harness';
 
 afterEach(() => {
     cleanup();
@@ -28,8 +28,14 @@ type TurnScenario = {
     model?: string;
 };
 
-/** Mount one turn inside a stand-in scroll container. */
-function mount(turn: TurnScenario, props: Partial<ComponentProps<typeof MessageTurn>> = {}) {
+/** Mount one turn inside a stand-in scroll container. `seed` overrides cells the row
+ *  reads (notably `model`, i.e. the surface's selected model — the attribution fallback
+ *  for a turn whose own record carries none). */
+function mount(
+    turn: TurnScenario,
+    props: Partial<ComponentProps<typeof MessageTurn>> = {},
+    seed: HarnessSeed = {}
+) {
     const model: ChatTurn = {
         index: turn.index,
         role: turn.role,
@@ -51,7 +57,7 @@ function mount(turn: TurnScenario, props: Partial<ComponentProps<typeof MessageT
         <ol data-testid="transcript">
             <MessageTurn turn={model} labelFor={labelFor} {...props} />
         </ol>,
-        { mode: 'offline' }
+        { mode: 'offline', ...seed }
     );
     return view;
 }
@@ -73,19 +79,82 @@ describe('turn shape by role', () => {
         expect(screen.getByTestId('message-model-2').textContent).toBe('coder (vultr)');
     });
 
-    it('falls back to the bare role for an assistant turn with no recorded model', () => {
+    it('names the selected model for a reply whose record carries none', () => {
+        // The producing model is what the row has to answer with, and a local/offline
+        // reply (or an older row) records none. `chat.model` is the model that produced
+        // it — the same value the streaming row prints for the reply in flight — so the
+        // row reads as a model, never as a generic "assistant".
+        mount({ index: 1, role: 'assistant', content: 'local reply', model: '' }, {}, { model: 'vultr/coder' });
+        expect(screen.getByTestId('message-model-1').textContent).toBe('coder (vultr)');
+        expect(screen.queryByTestId('message-label-1')).toBeNull();
+    });
+
+    it('falls back to the bare role only when no model is recorded OR selected', () => {
+        // '' is the harness default for `chat.model`, i.e. nothing selected at all: the
+        // one case left that prints the role, because a label of '' would say less.
         mount({ index: 1, role: 'assistant', content: 'old record', model: '' });
         expect(screen.getByTestId('message-label-1').textContent).toBe('assistant');
         expect(screen.queryByTestId('message-model-1')).toBeNull();
     });
 
-    it('keeps the body as ONE plain text node (no markdown pipeline)', () => {
-        mount({ index: 0, role: 'assistant', content: 'line one\nline **two**' });
+    it('keeps a user row on the literal role while a model is selected', () => {
+        // The fallback is the ASSISTANT row's only: the person who typed the turn is not
+        // the model the surface happens to be set to.
+        mount({ index: 0, role: 'user', content: 'asked' }, {}, { model: 'vultr/coder' });
+        expect(screen.getByTestId('message-label-0').textContent).toBe('user');
+        expect(screen.queryByTestId('message-model-0')).toBeNull();
+    });
+
+    it('keeps a user body as ONE plain text node (no markdown pipeline)', () => {
+        mount({ index: 0, role: 'user', content: 'line one\nline **two**' });
         const body = screen.getByTestId('message-content-0');
         // The characters arrive verbatim: `**two**` is NOT converted, and the
         // newline survives as text (transcript.css renders it with pre-wrap).
         expect(body.childNodes).toHaveLength(1);
         expect(body.textContent).toBe('line one\nline **two**');
+    });
+
+    it('renders an assistant reply as Markdown inside the same bubble', () => {
+        mount({ index: 0, role: 'assistant', content: 'line one\nline **two**' });
+        const body = screen.getByTestId('message-content-0');
+        // The wrapper is the bubble's only child, so the testid, the click-to-edit
+        // role and the role rail stay exactly where the skin and the suite read them.
+        expect(body.childNodes).toHaveLength(1);
+        const rendered = body.firstElementChild as HTMLElement;
+        expect(rendered.className).toBe('msg__markdown');
+        // The markers became structure, and no asterisk is left in the text.
+        expect(rendered.querySelector('strong')?.textContent).toBe('two');
+        expect(rendered.textContent).toBe('line one\nline two');
+    });
+
+    it('renders a fenced reply block as highlighted, labelled code', () => {
+        mount({ index: 0, role: 'assistant', content: '```ts\nconst x = 1;\n```' });
+        const block = screen.getByTestId('message-content-0').querySelector('.code-block');
+        expect(block).not.toBeNull();
+        // `data-language` is the author's own fence tag; the class is the resolved
+        // grammar, which is what styles/markdown.css captions and colours from.
+        expect(block?.getAttribute('data-language')).toBe('ts');
+        const code = block?.querySelector('code') as HTMLElement;
+        expect(code.className).toContain('hljs');
+        expect(code.className).toContain('language-typescript');
+        // The colour comes from the token spans highlight.js emitted.
+        expect(code.querySelector('.hljs-keyword')?.textContent).toBe('const');
+    });
+
+    it('never lets model-emitted markup reach the DOM unsanitized', () => {
+        mount({
+            index: 0,
+            role: 'assistant',
+            content: 'hi <script>alert(1)</script> <img src="x" onerror="boom()">'
+        });
+        const rendered = screen.getByTestId('message-content-0').firstElementChild as HTMLElement;
+        // `innerHTML` of model text is only safe behind DOMPurify: no script node,
+        // no event-handler attribute, and the allowed image still there (hardened by
+        // the renderer, never by this component).
+        expect(rendered.querySelector('script')).toBeNull();
+        const image = rendered.querySelector('img');
+        expect(image).not.toBeNull();
+        expect(image?.getAttribute('onerror')).toBeNull();
     });
 
     it('renders a system turn with neither a delete cross nor a role switch nor a fork', () => {
@@ -96,6 +165,9 @@ describe('turn shape by role', () => {
         expect(screen.queryByTestId('fork-message-0')).toBeNull();
         // Copy still exists: a prompt is copyable, just not deletable.
         expect(screen.getByTestId('copy-message-0')).not.toBeNull();
+        // And the prompt text is verbatim: only an assistant reply is Markdown, so the
+        // system prompt's own markers are characters, not formatting.
+        expect(screen.getByTestId('message-content-0').textContent).toBe('You are helpful.');
     });
 });
 

@@ -15,7 +15,9 @@
  *   .composer__pick          one picker's positioning context (text + overlay)
  *   .composer__pick-text     the readable label line the operator clicks
  *   .composer__pick-select   the REAL native select, invisible, overlaid on top
- *   .composer__usage         the `<count> Tokens` counter, flush right on that line
+ *   .composer__usage         the `<count> Tokens` counter (a <button>), flush right on
+ *                            that line — and, below the 900px seam, the drawer toggle
+ *                            for the inspector column
  *   .composer__field         the input box the mic and the arrow dock INSIDE
  *   .composer__voice         the mic, docked at the field's left edge
  *   .composer__send          the submit arrow, docked at the field's right edge
@@ -134,13 +136,37 @@
 /* The tail of that line: `margin-left: auto` (the last value of the shorthand) eats
    the free space, so the count reads flush right — and after a wrap it is still the
    right-most thing on its own line. Copy is `<count> Tokens`, so `uppercase` matches
-   the pickers beside it (the skin's metadata treatment, not new styling). */
+   the pickers beside it (the skin's metadata treatment, not new styling).
+   THE ELEMENT IS A <button>, not the <p> the markup used to emit, because below the
+   900px seam it gates the inspector drawer (components/ComposerDeck.tsx). Everything
+   below `margin` is the price of that: a UA button brings a border, a background,
+   padding, its own `font` and (on a mobile engine) native control styling, any of which
+   would put a second piece of chrome on the ONE line the picker labels share.
+   `font: inherit` is authored before the 11px line so the metadata size still wins.
+   Above the seam the element is `disabled` in the DOM — there is nothing to hover, so
+   no hover rule is authored for it either. */
 .station .composer__usage {
     margin: 0 0 0 auto;
+    padding: 0;
+    border: 0;
+    appearance: none;
+    background: none;
     color: var(--muted);
+    font: inherit;
     font-size: 11px;
     letter-spacing: 0.06em;
     text-transform: uppercase;
+}
+
+/* The keyboard path to the drawer. base.css's shared focus ring belongs to the
+   `.btn`/`.field` primitives, and the counter is deliberately NEITHER (a `.btn` carries
+   a `min-width: var(--row-height)` and padding this metadata line cannot pay for), so it
+   states its own ring. It can only ever appear below the seam, because above it the
+   element is disabled and therefore not focusable. */
+.station .composer__usage:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
 }
 
 /* ——— The input box (mic + arrow dock inside it) ————————————————————— */
@@ -253,9 +279,10 @@
 
 /* Narrow viewports need no shrink defenses: the picker line wraps and the input
    stacks under it (oracle 146-147). Below the 900px seam this file owns the
-   phone FOOTER: the composer is the bar at the bottom of the screen, so it loses
-   every line that is not the input itself. Gated at 899px, the same md boundary
-   the viewport seam reports as 'mobile'. */
+   phone FOOTER: the composer is the bar at the bottom of the screen, so it keeps
+   the ONE metadata line and the input, and nothing else — same chrome, same
+   order, as the desktop column above the seam. Gated at 899px, the same md
+   boundary the viewport seam reports as 'mobile'. */
 @media (max-width: 899px) {
     /* THE FOOTER CONTRACT: flush to the edges (the station's own padding is 0
        below this seam, styles/base.css), one hairline above, and the home-indicator
@@ -269,35 +296,32 @@
         border-radius: 0;
     }
 
-    /* The two pickers share ONE line on a phone: each is a `min-width: 0` flex
-       track whose label ellipsises, so the model/agent switches stay reachable
-       without spending a second row of the composer. (The pickers were stacked
-       full-width in an earlier revision; stacking cost the footer a whole line,
-       and each overlaid select still covers only its own label, so the tap target
-       is unchanged.) */
+    /* The metadata line reads EXACTLY as it does above the seam: the two pickers
+       sit content-width and adjacent on the left, and the counter keeps its
+       `margin-left: auto` tail on the right. `nowrap` is the only phone-only
+       guarantee — the footer may not spend a second line on chrome. Each picker is
+       already a `min-width: 0` flex track and `.composer__pick-text` is a scroll
+       container, so its automatic minimum size is zero: a long agent/model label
+       ellipsises instead of pushing the count past the edge or forcing a wrap.
+       (Earlier revisions grew the tracks with `flex: 1 1 0`, which spread the two
+       labels to the opposite edges of the bar, and hid the counter outright; both
+       made the phone composer read as a different layout than the desktop one.) */
     .station .composer__row {
         flex-wrap: nowrap;
-        gap: 10px;
-    }
-
-    .station .composer__pick {
-        flex: 1 1 0;
-        min-width: 0;
     }
 
     .station .composer__pick-text {
         max-width: none;
     }
 
-    /* The one line of chrome the phone does not need: the token counter, because
-       the counters also live in the rail's Settings tab (ChatSidebar.tsx:305),
-       which the phone reaches through the left drawer. It stays in the DOM: its
-       testid is asserted by the component tests, and `display: none` removes ink,
-       not data. (This rule used to hide the keyboard hint as well — that element
-       is gone from the composer, and with it the copy that was WRONG below the
-       seam, where Enter always inserts a newline and the button submits.) */
+    /* THE COUNTER IS A CONTROL BELOW THIS SEAM. Above it the element is a disabled
+       readout; below it the inspector column is an off-canvas drawer and this line is
+       what opens it (components/ComposerDeck.tsx writes `chat.asideOpen`), so the finger
+       has to be told the number is tappable. `cursor` is the ONE phone-only declaration
+       the counter gets — the metadata line keeps the desktop's layout outright, which is
+       what styles/skin.test.ts pins so no phone variant of it can creep back. */
     .station .composer__usage {
-        display: none;
+        cursor: pointer;
     }
 
     /* The field's own chrome: the docked mic and arrow keep their 42/46px gutters

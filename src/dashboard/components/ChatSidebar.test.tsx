@@ -1,21 +1,22 @@
-// ChatSidebar: the four registries, the row structure rule, and the drawer.
+// ChatSidebar: the conversation registry, the row structure rule, and the drawer.
 //
 // The row structure rule is the one this file exists to pin (behavior oracle
 // ChatAssistantApp.tsx:4282-4317): every entry is a positioning context holding
 // the SELECT control and the DELETE control as SIBLINGS — nesting them would be
 // invalid HTML and a delete click would bubble into a chat selection.
-import { act, cleanup, fireEvent, screen, within } from '@testing-library/react';
+//
+// The rail carries ONE registry now: the conversations board. The Agent / Tool /
+// Settings tabs (and the tab strip that held them) are gone, so this file also pins
+// that nothing else renders in the column and that `chat.sidebarTab` — which only the
+// aside still reads — cannot pull another surface into the rail.
+import { act, cleanup, fireEvent, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { AgentDefinition, ToolDefinition } from '../../agents';
 import {
-    CHAT_ACTIVE_SESSION_STATE,
-    CHAT_AUTOSCROLL_STATE,
-    CHAT_AUTOSCROLL_TOGGLE_COMMAND,
     CHAT_DRAWER_OPEN_STATE,
     CHAT_SESSIONS_STATE,
     CHAT_SIDEBAR_TAB_STATE,
-    type ChatSession,
-    type SidebarTab
+    type ChatSession
 } from '../contract';
 import { ChatSidebar } from './ChatSidebar';
 import { makeSession, renderWithHarness, stubViewport, type HarnessSeed } from './test-harness';
@@ -50,33 +51,36 @@ const TOOLS: ToolDefinition[] = [
 const SEED: HarnessSeed = { sessions: SESSIONS, activeSessionId: 'conv-1', agents: AGENTS, tools: TOOLS };
 
 describe('the rail shell', () => {
-    it('renders the sidebar surface with all four registry tabs', () => {
+    it('renders the conversation registry as the rail\'s only surface', () => {
         renderWithHarness(<ChatSidebar />, SEED);
         const rail = screen.getByTestId('sidebar');
         expect(rail.className).toBe('rail');
-        expect(within(rail).getByTestId('sidebar-tab-chat').textContent).toBe('Chat');
-        expect(within(rail).getByTestId('sidebar-tab-agent').textContent).toBe('Agent');
-        expect(within(rail).getByTestId('sidebar-tab-tool').textContent).toBe('Tool');
-        expect(within(rail).getByTestId('sidebar-tab-settings').textContent).toBe('Settings');
-        // The store's tab is the selected one, and it is the default.
-        expect(screen.getByTestId('sidebar-tab-chat').getAttribute('aria-selected')).toBe('true');
-        expect(screen.getByTestId('sidebar-tab-agent').getAttribute('aria-selected')).toBe('false');
+        // The board is there, and nothing else: no agent grid, no tool grid, no
+        // settings readout.
+        expect(screen.getByTestId('session-entry-conv-1')).not.toBeNull();
+        expect(screen.queryByTestId('agent-entry-pirate')).toBeNull();
+        expect(screen.queryByTestId('tool-entry-web-search')).toBeNull();
+        expect(screen.queryByTestId('sidebar-settings')).toBeNull();
     });
 
-    it('switches registries by writing the tab cell, not by executing an unregistered command', () => {
-        const view = renderWithHarness(<ChatSidebar />, SEED);
-        fireEvent.click(screen.getByTestId('sidebar-tab-agent'));
-        expect(view.read<unknown>(CHAT_SIDEBAR_TAB_STATE)).toBe('agent');
-        // contract.ts publishes no `chat.tab.set` id; nothing was thrown.
-        expect([...view.calls.keys()]).toEqual([]);
-        // The conversation list is gone and the agent registry is showing.
-        expect(screen.queryByTestId('session-entry-conv-1')).toBeNull();
-        expect(screen.getByTestId('agent-entry-pirate')).not.toBeNull();
-    });
-
-    it('keeps every tab id in the sidebar-tab-{tab} grammar', () => {
+    it('drops the tab strip with the dropped registries', () => {
         renderWithHarness(<ChatSidebar />, SEED);
-        expect(document.querySelectorAll('[data-testid^="sidebar-tab-"]')).toHaveLength(4);
+        // The `sidebar-tab-{tab}` grammar (contract.ts) has no producer any more.
+        expect(document.querySelectorAll('[data-testid^="sidebar-tab-"]')).toHaveLength(0);
+    });
+
+    it('ignores the tab cell, which the aside owns and the rail no longer reads', () => {
+        const view = renderWithHarness(<ChatSidebar />, SEED);
+        for (const tab of ['agent', 'tool', 'settings'] as const) {
+            act(() => view.write<unknown>(CHAT_SIDEBAR_TAB_STATE, tab));
+            // The conversations board stays put whatever the aside is showing, and it
+            // mutates through no command the rail invented.
+            expect(screen.getByTestId('session-entry-conv-1')).not.toBeNull();
+            expect(screen.queryByTestId('agent-entry-pirate')).toBeNull();
+            expect(screen.queryByTestId('tool-entry-web-search')).toBeNull();
+            expect(screen.queryByTestId('sidebar-settings')).toBeNull();
+            expect([...view.calls.keys()]).toEqual([]);
+        }
     });
 });
 
@@ -187,53 +191,19 @@ describe('the chat registry', () => {
     });
 });
 
-describe('the agent and tool registries', () => {
-    it('summarises each agent as "N turns · M tools" and selects it through chat.agent.set', () => {
-        const view = renderWithHarness(<ChatSidebar />, { ...SEED, sidebarTab: 'agent' });
-        const row = screen.getByTestId('agent-entry-pirate');
-        expect(row.querySelector('.rail__meta')?.textContent).toBe('2 turns · 2 tools');
-        fireEvent.click(row.querySelector('.rail__item') as Element);
-        expect(view.callsOf('chat.agent.set')).toEqual(['pirate']);
-    });
-
-    it('marks the agent the composer already applies', () => {
-        renderWithHarness(<ChatSidebar />, { ...SEED, sidebarTab: 'agent', activeAgentId: 'pirate' });
-        expect(screen.getByTestId('agent-entry-pirate').querySelector('.rail__item')?.getAttribute('aria-current')).toBe(
-            'true'
-        );
-    });
-
-    it('labels each tool by kind — native, or the coded language — and offers no select', () => {
-        const view = renderWithHarness(<ChatSidebar />, { ...SEED, sidebarTab: 'tool' });
-        expect(screen.getByTestId('tool-entry-web-search').querySelector('.rail__meta')?.textContent).toBe('native');
-        expect(screen.getByTestId('tool-entry-chart').querySelector('.rail__meta')?.textContent).toBe('typescript');
-        // contract.ts has no `chat.tool.select` id, so the row is a plain div: a
-        // button that did nothing would be a lie.
-        expect(screen.getByTestId('tool-entry-web-search').querySelector('button')).toBeNull();
-        expect([...view.calls.keys()]).toEqual([]);
-    });
-
-    it('reports empty registries instead of an empty column', () => {
-        renderWithHarness(<ChatSidebar />, { ...SEED, sidebarTab: 'agent', agents: [] });
-        expect(screen.getByTestId('empty-agent-list').textContent).toBe('No agents yet.');
-        renderWithHarness(<ChatSidebar />, { ...SEED, sidebarTab: 'tool', tools: [] });
-        expect(screen.getByTestId('empty-tool-list').textContent).toBe('No tools registered.');
-    });
-});
-
-describe('the settings tab', () => {
-    it('mirrors the live cells and toggles the follow switch through its command', () => {
-        const view = renderWithHarness(<ChatSidebar />, { ...SEED, sidebarTab: 'settings', usage: { total_tokens: 991 } });
-        expect(screen.getByTestId('sidebar-status').textContent).toBe('idle');
-        expect(screen.getByTestId('sidebar-turn-count').textContent).toBe('0');
-        expect(screen.getByTestId('sidebar-model').textContent).toBe('none');
-        expect(screen.getByTestId('sidebar-tokens').textContent).toBe('991');
-        const toggle = screen.getByTestId('autoscroll-toggle') as HTMLButtonElement;
-        expect(toggle.getAttribute('aria-pressed')).toBe('true');
-        fireEvent.click(toggle);
-        expect(view.callsOf(CHAT_AUTOSCROLL_TOGGLE_COMMAND)).toEqual([undefined]);
-        expect(view.read<boolean>(CHAT_AUTOSCROLL_STATE)).toBe(false);
-        expect(screen.getByTestId('autoscroll-toggle').getAttribute('aria-pressed')).toBe('false');
+describe('the registries the rail no longer carries', () => {
+    it('renders no agent, tool or settings surface even when the seed is full', () => {
+        renderWithHarness(<ChatSidebar />, {
+            ...SEED,
+            sidebarTab: 'agent',
+            usage: { total_tokens: 991 }
+        });
+        expect(screen.queryByTestId(/^agent-entry-/)).toBeNull();
+        expect(screen.queryByTestId(/^tool-entry-/)).toBeNull();
+        expect(screen.queryByTestId('empty-agent-list')).toBeNull();
+        expect(screen.queryByTestId('empty-tool-list')).toBeNull();
+        expect(screen.queryByTestId('sidebar-settings')).toBeNull();
+        expect(screen.queryByTestId('autoscroll-toggle')).toBeNull();
     });
 });
 
@@ -258,11 +228,23 @@ describe('the mobile drawer', () => {
             // dismiss target (the oracle's rule, ChatAssistantApp.tsx:4510-4512).
             expect(toggle.compareDocumentPosition(scrim)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
             expect(scrim.compareDocumentPosition(rail)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-            // The control addresses the panel it gates, and the panel's own head is
-            // now only its caption.
+            // The control addresses the panel it gates.
             expect(toggle.getAttribute('aria-controls')).toBe('sidebar');
             expect(toggle.getAttribute('aria-expanded')).toBe('true');
-            expect(rail.querySelector('.rail__bar')?.textContent).toBe('Rail');
+            // NO HEAD LINE: the "Rail" caption and its `.rail__bar` row are gone, so the
+            // panel opens on the board's own heading. `role="region"` on `.rail__body` is
+            // what names the panel now, and it is the rail's accessible name, not a caption.
+            expect(rail.querySelector('.rail__bar')).toBeNull();
+            expect(rail.querySelector('.rail__label')).toBeNull();
+            expect(screen.queryByText('Rail')).toBeNull();
+            expect(rail.querySelector('.rail__body')?.getAttribute('aria-label')).toBe(
+                'Conversations'
+            );
+            expect(
+                rail.querySelector('.rail__body > .rail__heading .rail__heading-text')?.textContent
+            ).toBe('Conversations');
+            // The heading is the panel's FIRST box, i.e. the line the caption used to sit above.
+            expect(rail.firstElementChild?.className).toBe('rail__body');
         } finally {
             restore();
         }
@@ -298,13 +280,13 @@ describe('the mobile drawer', () => {
             expect(screen.getByTestId('sidebar').getAttribute('data-open')).toBe('true');
 
             restore();
-            act(() => view.write<SidebarTab>(CHAT_SIDEBAR_TAB_STATE, 'settings'));
+            act(() => view.write<readonly ChatSession[]>(CHAT_SESSIONS_STATE, [...SESSIONS]));
 
             expect(view.read<boolean>(CHAT_DRAWER_OPEN_STATE)).toBe(false);
             expect(screen.getByTestId('sidebar').getAttribute('data-open')).toBe('false');
             expect(screen.queryByTestId('sidebar-scrim')).toBeNull();
             // The column itself keeps rendering — only the overlay went away.
-            expect(screen.getByTestId('sidebar-settings')).toBeTruthy();
+            expect(screen.getByTestId('sidebar-list-chat')).toBeTruthy();
 
             restore = stubViewport('mobile');
         } finally {

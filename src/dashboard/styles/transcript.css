@@ -8,14 +8,18 @@
  *   .stream__list            the ONE scroll container, data-testid="transcript"
  *   .msg                     one turn wrapper (message-turn-*), .msg--role rails
  *   .msg__role               the uppercase attribution text inside .msg__label
- *   .msg__text               the bubble body: plain text, pre-wrap, anywhere-break
+ *   .msg__text               the bubble body: pre-wrap, anywhere-break; a USER or
+ *                            SYSTEM turn puts the verbatim text in it directly, an
+ *                            ASSISTANT turn puts sanitized Markdown in a child
+ *                            .msg__markdown (styles/markdown.css owns that subtree)
  *   .msg__controls           the trailing strip under a bubble (turn-controls-*)
  *   --- extensions (all emitted by the three components above) ---
  *   .stage .stage__error     the stage column wrapper + its non-modal error strip
  *   .msg__head .msg__lead    the header row (always the turn's FIRST child, which
  *                            the sticky gate measures) and its label-side group
  *   .msg__label              the attribution line, which IS the collapse toggle
- *   .msg__preview            the collapsed one-line preview (stacked, never inline)
+ *   .msg__preview            the collapsed one-line preview (inline, on the label's
+ *                            line: the label pair left, the preview filling the rest)
  *   .msg__text--edit         the same bubble while it is the contentEditable editor
  *   .msg__jump .msg__actions .msg__ghost   the strip's icon-button groups
  *   .msg__loading .msg__dot  the three-dot "no token yet" affordance
@@ -189,6 +193,22 @@
     text-align: right;
 }
 
+/* A COLLAPSED turn keeps label and preview on ONE line. The wrap step measures a
+   flex item at its CONTENT size, so a long preview would be pushed below the label
+   no matter how far it may shrink — `nowrap` is what makes it shrink instead, and
+   `.msg__preview`'s `min-width: 0` is what lets it shrink to the leftover space. */
+.station .msg[data-collapsed='true'] .msg__lead {
+    flex-wrap: nowrap;
+}
+
+/* The user row reads label-pair LEFT, preview RIGHT — the edge the bubble body
+   hugs. `row-reverse` lays items out from the right edge, so `order: -1` puts the
+   preview first along the main axis and lands it on the right, ahead of the
+   label/switch pair (which keeps the switch on the label's left). */
+.station .msg__lead[data-align='right'] .msg__preview {
+    order: -1;
+}
+
 .station .msg__label {
     display: inline-flex;
     align-items: center;
@@ -225,7 +245,11 @@
 }
 
 .station .msg__preview {
-    width: 100%;
+    /* ONE line with the label: it takes the rest of the header row rather than the
+       whole row, and `min-width: 0` is what lets it shrink below its own text width
+       so the ellipsis can do its job. */
+    flex: 1 1 auto;
+    min-width: 0;
     padding: 0;
     border: 0;
     background: transparent;

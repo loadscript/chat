@@ -24,7 +24,8 @@
 //      guarantee does not depend on which plugin happened to own the cell write;
 //   4. the in-flight stream invalidation a provider-base edit implies (a reply
 //      streaming from the OLD base is no longer the answer being configured);
-//   5. the human-readable consequence of each change on the notice strip.
+//   5. the human-readable consequence of the OFFLINE change on the notice strip (the
+//      online direction is the default configuration and announces nothing).
 //
 // NO REACT, NO JSX, NO DOM. Every persisted byte goes through api/offline.ts.
 import type { DashboardPlugin } from '@underload/dashboard';
@@ -59,11 +60,17 @@ const MODES: readonly ChatMode[] = Object.freeze(['online', 'offline']);
 export const SETTINGS_PERSIST_FAILED =
     'Settings changed for this session, but this browser blocked localStorage, so they will not be restored after a reload.';
 
-/** One row of the notice strip: what the operator just did, in plain words. */
-export const modeNotice = (mode: ChatMode): string =>
+/**
+ * One row of the notice strip: what the operator just did, in plain words. Only the
+ * OFFLINE direction has a row — it says where conversations are kept and which base
+ * answers for inference, neither of which the form itself shows. ONLINE is the default
+ * configuration and states nothing the strip adds, so `modeNotice` returns null for it
+ * and `chat.mode.set` emits nothing (see the emit site).
+ */
+export const modeNotice = (mode: ChatMode): string | null =>
     mode === 'offline'
         ? 'Offline mode: conversations are stored in this browser and the provider base URL below answers for inference.'
-        : 'Online mode: conversations use the application storage server and the private provider relay.';
+        : null;
 
 /**
  * Persist one settings snapshot in the canonical single-base form
@@ -172,8 +179,13 @@ export function createSettingsPlugin(): DashboardPlugin {
                 // documented seam for a mode switch is the cell subscription itself.
                 if (!persistedNow) reportPersistence();
 
-                const notice: NoticeEvent = { message: modeNotice(next) };
-                api.emit(CHAT_NOTICE_EVENT, notice);
+                // The offline direction alone reaches the strip; switching back to the
+                // default online configuration stays silent (`modeNotice` is null).
+                const message = modeNotice(next);
+                if (message !== null) {
+                    const notice: NoticeEvent = { message };
+                    api.emit(CHAT_NOTICE_EVENT, notice);
+                }
             });
 
             // ——— `chat.providerBase.set` —————————————————————————————————————————

@@ -6,10 +6,16 @@
 // (2421-2439), the focus-gated send arrow (5081-5090, 5222-5241), the always
 // visible mic (5205-5221) and the token counter (5169-5171 — now the right-hand tail
 // of the picker line, `<count> Tokens`, instead of its own `Total tokens: N` row).
+//
+// ONE THING IS NOT FROM THE ORACLE: below the 900px seam that same counter is the
+// inspector drawer's control (`chat.asideOpen`), because the aside's corner chevron was
+// removed. The `describe` at the end of this file pins it, cell and ARIA wiring
+// included, on both sides of the seam.
 import { act, cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { AgentDefinition } from '../../agents';
 import {
+    CHAT_ASIDE_OPEN_STATE,
     CHAT_AGENT_SET_COMMAND,
     CHAT_AUTOSCROLL_STATE,
     CHAT_DRAFT_SET_COMMAND,
@@ -273,8 +279,10 @@ describe('token usage and pickers', () => {
             'model-picker',
             'token-usage'
         ]);
-        // The count carries its own unit and no label, in that exact order.
-        expect(usage.tagName).toBe('P');
+        // The count carries its own unit and no label, in that exact order. It is a
+        // <button> (the phone drawer's control, see the describe below) — and it is still
+        // the LAST track of the metadata row, which is the half this case pins.
+        expect(usage.tagName).toBe('BUTTON');
         expect(usage.textContent).toBe('7925 Tokens');
     });
 
@@ -340,6 +348,71 @@ describe('token usage and pickers', () => {
             'modal/glm-5.3-flash'
         ]);
         expect(screen.getByTestId('model-label').textContent).toBe('old-model');
+    });
+});
+
+describe('the counter doubles as the inspector drawer control below the seam', () => {
+    // The aside column used to pin a chevron to the phone bar's top-right corner; that
+    // glyph is gone (./ChatInspector.tsx), and the count is what opens the drawer. Both
+    // sides are pinned: on a phone the element is a live disclosure writing the cell, and
+    // above the seam it is the readout it always was, with nothing to open.
+    it('opens and closes chat.asideOpen on a phone, writing the cell directly', () => {
+        const restore = stubViewport('mobile');
+        try {
+            const view = renderWithHarness(<ComposerDeck />, {
+                ...PROVIDER_SEED,
+                usage: { total_tokens: 7925 }
+            });
+            const usage = screen.getByTestId('token-usage') as HTMLButtonElement;
+
+            // ONE element, two jobs: the count is both the readout and the accessible
+            // name, so an `aria-label` would have hidden the number rather than naming
+            // the control, and `type="button"` keeps it out of the form's submit path.
+            expect(usage.tagName).toBe('BUTTON');
+            expect(usage.type).toBe('button');
+            expect(usage.disabled).toBe(false);
+            expect(usage.textContent).toBe('7925 Tokens');
+            expect(usage.getAttribute('aria-expanded')).toBe('false');
+            // The panel lives in the other region; ids are document-global, so the
+            // reference resolves to the `aside-panel` ChatInspector renders.
+            expect(usage.getAttribute('aria-controls')).toBe('aside-panel');
+            expect(usage.getAttribute('title')).toBe('Toggle inspector');
+
+            fireEvent.click(usage);
+            expect(view.read<boolean>(CHAT_ASIDE_OPEN_STATE)).toBe(true);
+            expect(usage.getAttribute('aria-expanded')).toBe('true');
+
+            fireEvent.click(usage);
+            expect(view.read<boolean>(CHAT_ASIDE_OPEN_STATE)).toBe(false);
+            expect(usage.getAttribute('aria-expanded')).toBe('false');
+
+            // A cell write, never a dispatch: contract.ts registers `chat.asideOpen` as
+            // state and publishes no command id for it, so anything executed here would
+            // throw `unknown-command`.
+            expect([...view.calls.keys()]).toEqual([]);
+        } finally {
+            restore();
+        }
+    });
+
+    it('stays a readout above the seam, where the column is a static grid track', () => {
+        // jsdom ships no `matchMedia`, and the seam documents that as DESKTOP.
+        const view = renderWithHarness(<ComposerDeck />, PROVIDER_SEED);
+        const usage = screen.getByTestId('token-usage') as HTMLButtonElement;
+
+        expect(usage.disabled).toBe(true);
+        // No disclosure semantics on an element that cannot disclose anything.
+        expect(usage.getAttribute('aria-expanded')).toBeNull();
+        expect(usage.getAttribute('aria-controls')).toBeNull();
+        expect(usage.getAttribute('title')).toBeNull();
+        // The number still reads, which is the whole point of the line.
+        expect(usage.textContent).toBe('0 Tokens');
+
+        // A click that somehow lands (scripted, not user) opens nothing: the drawer flag
+        // is inert above the seam, and a set flag would latch an invisible overlay.
+        fireEvent.click(usage);
+        expect(view.read<boolean>(CHAT_ASIDE_OPEN_STATE)).toBe(false);
+        expect([...view.calls.keys()]).toEqual([]);
     });
 });
 

@@ -44,10 +44,15 @@
 
 .station__bar {
     display: flex;
-    flex-wrap: wrap;
+    /* ONE line, at every width: `nowrap` is the guarantee (the phone block below
+       already declares it for its own layout, and a wrapped second row here would
+       put the bar back to two lines), and the vertical padding is gone so the bar is
+       exactly as tall as the tallest control it carries — the icon-only configuration
+       button, `min-height: var(--row-height)` in the `.btn` primitive. */
+    flex-wrap: nowrap;
     align-items: center;
     gap: 8px 18px;
-    padding: var(--pad);
+    padding: 0 var(--pad);
     border: 1px solid var(--line);
     border-left: var(--rail) solid var(--accent);
     border-radius: var(--radius);
@@ -180,9 +185,11 @@
    feature surface `chat.sidebarTab` selects (components/ChatInspector.tsx). The
    feature keeps its own root (.agents / .tools / .panel) and this only
    sizes the column, so a long registry scrolls inside the region instead of
-   pushing the composer off-screen. The rail's Settings tab is a readout that lives in
-   the rail, and configuration lives in the header's dialog, so this column renders no
-   `.settings` surface any more. */
+   pushing the composer off-screen. Configuration lives in the header's dialog, so
+   this column renders no `.settings` surface any more, and the readout the rail's
+   Settings tab used to carry (activity, turns, model, tokens, follow-output) is the
+   Chat tab's own surface now — components/ConversationInspector.tsx, styled in
+   inspector.css. */
 .station .inspector {
     display: flex;
     flex-direction: column;
@@ -196,14 +203,11 @@
     min-height: 0;
 }
 
-/* The phone drawer's corner control (components/ChatInspector.tsx). A static
-   column needs no gate, so it never paints at or above the seam — the exact
-   shape `.rail__menu` uses (sessions.css:82-85); the 899px block below turns it
-   into the fixed top-right toggle. */
-.station .inspector__menu {
-    display: none;
-    padding: 4px;
-}
+/* The phone drawer's corner control (components/ChatInspector.tsx) is hidden at
+   and above the seam — a static column needs no gate — and the 899px block at the
+   bottom of this file turns it into the fixed top-right toggle. Its OWN rule sits
+   below the button primitives, not here, because the cascade requires it: see
+   "Region gate" under ——— Buttons ———. */
 
 /* ——— Panels (chrome for descriptor contributions) ——————————————————————— */
 
@@ -305,6 +309,15 @@
 .station .btn--icon {
     min-width: var(--row-height);
     padding: 6px;
+    /* An icon-only control has to centre its glyph on BOTH axes. A <button> is
+       inline-block by default, so the 16px SVG joined the box as baseline-aligned
+       inline content inside a 1.5 line-height: the bar's gear, the rail's hamburger
+       and the aside's chevron each sat low/off-centre in their own square. Flex
+       centring is the same treatment `.msg__ghost` (transcript.css) already gives the
+       transcript's icon buttons, so every icon control on the skin lands alike. */
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .station .btn.is-active {
@@ -312,6 +325,22 @@
     background: color-mix(in srgb, var(--accent) 24%, var(--surface));
     color: var(--accent);
 }
+
+/* ——— Region gate ———————————————————————————————————————————————————————— */
+
+/* THE ASIDE HAS NO CORNER CONTROL ANY MORE. Its drawer used to be gated by a chevron
+   (`aside-toggle`, components/ChatInspector.tsx) fixed to the phone bar's top-right
+   corner, the right-hand twin of the rail's `.rail__menu`. That element carried BOTH the
+   primitive classes (`btn btn--ghost btn--icon`) and its own, and `.btn--icon` sets
+   `display: inline-flex`, so its desktop `display: none` had to be authored AFTER that
+   rule to win the cascade on equal specificity (0,2,0) — while it sat higher up the
+   sheet the primitive won, the glyph painted on desktop, and `.station__region > *`
+   stretched it into a full-height block over the inspector column: the "huge chevron".
+   The rail still escapes that trap only because sessions.css loads AFTER this file
+   (styles/index.css), an import-order accident rather than a rule, and it is exactly why
+   styles/skin.test.ts used to pin this pair's order. The glyph is gone by request — the
+   composer's token counter is the drawer's control now (composer.css,
+   components/ComposerDeck.tsx) — so there is no gate left to author or to pin. */
 
 /* ——— Fields (shared input/select/textarea surface) ————————————————————— */
 
@@ -452,12 +481,15 @@
         grid-template-rows: minmax(0, 1fr);
     }
 
-    /* The two drawer columns LEAVE the grid entirely. Below this seam every child
-       of these regions is `position: fixed` (the rail and its control in
-       sessions.css, the inspector and its control below), and an out-of-flow grid
-       item takes no track — that is what removes the dead rows. The box itself is
-       fixed at the viewport origin with zero size so it can neither paint nor
-       swallow a tap on the transcript underneath it.
+    /* The two drawer columns LEAVE the grid entirely. Below this seam every child of
+       these regions is `position: fixed` (the rail and its control in sessions.css,
+       the inspector panel and its scrim below), and an out-of-flow grid item takes no
+       track — that is what removes the dead rows. The box itself is fixed at the
+       viewport origin with zero size so it can neither paint nor swallow a tap on the
+       transcript underneath it.
+       The aside has NO control of its own in this column any more: its toggle is the
+       composer's token counter, in normal flow inside the stage region, which is why
+       that region keeps its track and the stage stays the grid's only in-flow child.
        NOT `display: none`: that would destroy the fixed descendants too, because a
        `display: none` subtree renders nothing at all. */
     .station__region--sidebar,
@@ -478,8 +510,11 @@
        guarantee. What is left in the bar is the title and the configuration
        button — the tagline and the note are gone from the markup, and the chip
        row is the only thing still hidden here (a phone bar has no room for live
-       chips). The 56px side padding is the room the two fixed corner controls
-       occupy — see `.rail__menu` (sessions.css) and `.inspector__menu` below. */
+       chips). The 56px side padding is the room the fixed rail control takes on the
+       left — see `.rail__menu` (sessions.css) — and the room the bar's own
+       configuration button keeps clear of the right edge. The aside used to supply a
+       second fixed control for that right gutter; its chevron is gone (see "Region
+       gate" above) and the gutter did not need to shrink with it. */
     .station__bar {
         flex-wrap: nowrap;
         align-items: center;
@@ -510,25 +545,33 @@
         display: none;
     }
 
-    /* ——— Inspector: the right-hand drawer —————————————————————————————————
-       The mirror of the rail (sessions.css:338-398): a viewport-fixed panel off
-       the right edge, a full-viewport dismiss target, the same 160ms transform
-       language, and the same LITERAL z-index pair — a token/rem z-index value is
-       the trap documented at sessions.css:48-50. `translateX(105%)` clears the
-       1px frame the way the rail's -105% clears its own. */
+    /* ——— Inspector: the drawer on the RAIL's edge —————————————————————————
+       Same language as the rail (sessions.css:326-389) — viewport-fixed, a
+       full-viewport dismiss target, the 160ms transform, the LITERAL z-index pair
+       (a token/rem z-index value is the trap documented at sessions.css:48-50) —
+       but it opens off the LEFT edge now, by request: the right edge was the bar's
+       configuration button and the thumb's weaker side. `left: 0` +
+       `translateX(-105%)` clear the 1px frame the way the rail's own -105% clears
+       its own, and `border-right` is the seam that faces the transcript. */
     .station .inspector {
         position: fixed;
-        inset-block: 0;
-        right: 0;
+        /* NO RESERVED TOP BAND. The rail starts at `inset-block: 0` and buys its
+           floating hamburger with `padding-top: calc(var(--mobile-bar) + var(--pad))`
+           (sessions.css:354-358) — a run of empty padding under the bar line. This
+           column has no corner control to make room for ("Region gate" above), so it
+           starts BELOW the bar instead: `--mobile-bar` is the shared skin-local
+           measure for that one line, so `inset-block-start` lands the drawer flush on
+           the bar's hairline and `padding: var(--pad)` stays an even ring on all four
+           sides. The bar — and its configuration button — also stay unpainted-over
+           rather than disappearing behind the drawer's own background. */
+        inset-block: var(--mobile-bar) 0;
+        left: 0;
         z-index: 20;
         width: min(320px, 85vw);
         padding: var(--pad);
-        /* The panel runs under the bar line, so its content starts below it (and
-           below the floating corner control). */
-        padding-top: calc(var(--mobile-bar) + var(--pad));
-        border-left: 1px solid var(--line);
+        border-right: 1px solid var(--line);
         background: var(--raised);
-        transform: translateX(105%);
+        transform: translateX(-105%);
         transition: transform 160ms ease;
         /* The drawer is its own scroller now: `.station__region--aside` is a zero
            box, so the region rule (base.css:147-157) no longer carries this
@@ -541,9 +584,12 @@
         transform: translateX(0);
     }
 
-    /* Rendered only while the drawer is open (components/ChatInspector.tsx), so it
-       can never swallow a desktop click. It is a <button> (keyboard-dismissible),
-       hence the reset — same shape as `.rail__scrim`. */
+    /* THE ONLY DISMISS TARGET. Rendered only while the drawer is open
+       (components/ChatInspector.tsx), so it can never swallow a desktop click. It is a
+       <button> (keyboard-dismissible), hence the reset — same shape as `.rail__scrim`.
+       The column has no corner control to close itself any more, so this is how the
+       drawer shuts: z 10 puts it over the stage footer, which means a tap on the
+       composer counter that opened the drawer lands here and shuts it again. */
     .station .inspector__scrim {
         position: fixed;
         inset: 0;
@@ -555,18 +601,10 @@
         cursor: pointer;
     }
 
-    /* The top-right control. It is a SIBLING of the drawer, never a child: the
-       panel carries a transform, and a transformed box is the containing block of
-       its fixed descendants, which would slide the control off-screen with the
-       panel. z-index 30 keeps it tappable above the open drawer, so the same
-       corner closes it. */
-    .station .inspector__menu {
-        /* The desktop rule is `display: none` (see "Region owners" above); the
-           phone layout turns the corner control on. */
-        display: inline-flex;
-        position: fixed;
-        top: calc(6px + env(safe-area-inset-top, 0px));
-        right: 8px;
-        z-index: 30;
-    }
+    /* NO CONTROL IN THIS CORNER. The drawer is opened by the composer's token counter
+       (`token-usage`, composer.css + components/ComposerDeck.tsx), which needs nothing
+       from this block: it is an ordinary in-flow element of the stage footer, painted
+       under the scrim above, and it is `disabled` — inert — the moment the seam moves to
+       desktop. A chevron used to be fixed here at z-index 30, and the pair of cascade
+       gates that kept it off the desktop layout went with it ("Region gate", above). */
 }

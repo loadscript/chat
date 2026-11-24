@@ -1,0 +1,189 @@
+/*
+ * The conversation inspector — the aside column's Chat-tab readout.
+ * OWNER: src/dashboard/components/ConversationInspector.tsx, mounted by
+ * ChatInspector.tsx for the `chat` rail tab (the Agent / Tool tabs keep their own
+ * files, agents.css / tools.css).
+ *
+ * Vocabulary (all emitted by the owner above):
+ *   .inspector__state          the head's live activity word, [data-status] +
+ *                              [data-busy] drive its colour and its pulse
+ *   .inspector__live           the "work in flight" block: the phase, the queued
+ *                              user text, the partial reply's length
+ *   .inspector__live-label     that block's uppercase phase line
+ *   .inspector__preview        the queued user text, clamped to three lines
+ *   .inspector__count          the partial reply's char count
+ *   .inspector__error          the surfaced `chat.error` line
+ *   .inspector__rows           the <dl> of readout rows
+ *   .inspector__row            one <dt>/<dd> pair, testid `inspector-row-{key}`
+ *
+ * WHAT THIS FILE DOES NOT STYLE:
+ *   - the column itself (`.inspector`, its drawer, its scrim and its corner control):
+ *     base.css, "Region owners" / "Region gate" — this file only fills the column;
+ *   - the panel chrome (`.panel`, `.panel__head`, `.panel__title`, `.panel__hint`,
+ *     `.panel__body`): base.css, reused verbatim, exactly as the idle panel does, so
+ *     a readout and a "nothing registered" column are the same shape on screen;
+ *   - the token COUNTER in the composer (`composer__usage`, composer.css). The Total
+ *     row here is the same `chat.usage` cell read out in detail, not a second
+ *     affordance: the composer keeps the one live number, this column answers
+ *     "where did those tokens come from".
+ *
+ * COLOUR RULE (tokens.css): a busy phase reads accent, `error` reads danger, `idle`
+ * reads muted. The phase is always spelled as a WORD next to the dot, so the state is
+ * never colour-only, and the pulse is decoration — tokens.css kills every animation
+ * under `data-motion='reduced'` and `prefers-reduced-motion`, which is why no
+ * `@media` guard is needed here.
+ */
+
+/* ——— The live activity word ————————————————————————————————————————————————— */
+
+.station .inspector__state {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--muted);
+}
+
+/* The dot. Decoration only — the label beside it is the information — so it is
+   `aria-hidden` in the markup and carries no content of its own here beyond the box. */
+.station .inspector__state::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: currentColor;
+    opacity: 0.45;
+}
+
+.station .inspector__state[data-busy='true'] {
+    color: var(--accent);
+}
+
+.station .inspector__state[data-busy='true']::before {
+    opacity: 1;
+    animation: inspector-pulse 1.1s ease-in-out infinite;
+}
+
+.station .inspector__state[data-status='error'] {
+    color: var(--danger);
+}
+
+@keyframes inspector-pulse {
+    0%,
+    100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.25;
+    }
+}
+
+/* ——— Work in flight ——————————————————————————————————————————————————————————— */
+
+/* Rendered only while a TURN is in flight — queued user text or streamed reply text
+   (ConversationInspector.tsx) — so an idle or merely-loading column stays a plain
+   list of rows, and the accent block never repeats the phase word the head already
+   prints. The accent rail is the same `var(--rail)` width the transcript's own live
+   affordance uses. */
+.station .inspector__live {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 0 0 10px;
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-left: var(--rail) solid var(--accent);
+    border-radius: var(--radius-sm);
+    background: var(--accent-soft);
+}
+
+.station .inspector__live-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+
+/* The queued user text, verbatim but clamped: an operator scanning the column needs
+   to know WHICH send is in flight, not to re-read it. A long prompt wraps inside the
+   clamp instead of widening the column. */
+.station .inspector__preview {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    margin: 0;
+    color: var(--text);
+    font-size: 12px;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+}
+
+.station .inspector__count {
+    margin: 0;
+    color: var(--muted);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+}
+
+/* The surfaced failure. It is `chat.error`, the same string the stage's
+   `error-banner` carries — repeated here on purpose, because the banner is
+   dismissed with the strip and an operator reading the inspector afterwards still
+   needs to know the last turn failed. */
+.station .inspector__error {
+    margin: 0 0 10px;
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-left: var(--rail) solid var(--danger);
+    border-radius: var(--radius-sm);
+    color: var(--danger);
+    font-size: 12px;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+}
+
+/* ——— The readout rows ————————————————————————————————————————————————————————— */
+
+/* A <dl> of label/value pairs — the same shape the rail's Settings readout used
+   before the rail lost its tabs, and the only honest markup for a readout: no
+   control here writes anything back. */
+.station .inspector__rows {
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+}
+
+.station .inspector__row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    /* The 4px column keeps a wrapping value on its own line; the 8px row gap keeps
+       the two lines of one pair closer than the two pairs. */
+    gap: 4px 8px;
+    padding: 5px 0;
+    border-bottom: 1px solid var(--line);
+}
+
+.station .inspector__row:last-child {
+    border-bottom: 0;
+    padding-bottom: 0;
+}
+
+.station .inspector__row dt {
+    color: var(--muted);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.station .inspector__row dd {
+    margin: 0;
+    /* A provider id or a session id is longer than this 300px column: the value
+       breaks inside the cell rather than scrolling the region sideways. */
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    text-align: right;
+    font-size: 12px;
+}

@@ -18,7 +18,7 @@
  * throws (plugins/harness.ts:121), which is what makes the double load-bearing
  * rather than decorative.
  */
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -76,9 +76,11 @@ describe('App (public shell)', () => {
         expect(screen.getByTestId('transcript')).toBeTruthy();
         expect(screen.getByTestId('composer-input')).toBeTruthy();
         expect(screen.getByTestId('aside-panel')).toBeTruthy();
-        // The conversation tab has no inspector, and that is a rendered state, not an
-        // empty column (src/dashboard/components/ChatInspector.tsx).
-        expect(screen.getByTestId('inspector-idle')).toBeTruthy();
+        // The conversation tab has an inspector now: the column's default view is the
+        // live readout of the open conversation, not a placeholder (src/dashboard/
+        // components/ConversationInspector.tsx, mounted by ChatInspector.tsx).
+        expect(screen.getByTestId('inspector-chat')).toBeTruthy();
+        expect(screen.queryByTestId('inspector-idle')).toBeNull();
 
         // Nothing placeholder-shaped survives the swap. T3's Placeholder{Stage,Sidebar,
         // Aside} components are deleted, and T1's order-0 layout DESCRIPTORS never
@@ -95,10 +97,10 @@ describe('App (public shell)', () => {
         expect(screen.queryAllByTestId('error-banner')).toHaveLength(0);
     });
 
-    it('keeps the rail Settings readout while the inspector hosts no configuration editor', () => {
-        // R5: the rail's Settings tab and its status readout stay (they are read-only
-        // state, not a second editor), and the editable panel left the aside so the
-        // header dialog is the only one on screen.
+    it('keeps the rail on the conversation registry and hosts no configuration editor', () => {
+        // The rail carries ONE registry now: its Agent / Tool / Settings tabs are gone,
+        // so the column is the conversation board alone. The header dialog stays the
+        // only configuration editor, and the aside renders no editor either.
         resetStorage();
         seedSettings('online', '');
         stubDeploymentReads();
@@ -109,15 +111,23 @@ describe('App (public shell)', () => {
         // the tree at all.
         expect(screen.queryByTestId('settings-workspace')).toBeNull();
 
-        fireEvent.click(screen.getByTestId('sidebar-tab-settings'));
+        // No tab strip, and none of the surfaces it used to switch between.
+        expect(document.querySelectorAll('[data-testid^="sidebar-tab-"]')).toHaveLength(0);
+        expect(screen.queryByTestId('sidebar-settings')).toBeNull();
+        expect(screen.queryByTestId('empty-agent-list')).toBeNull();
+        expect(screen.queryByTestId('empty-tool-list')).toBeNull();
 
-        // The readout is there...
-        expect(screen.getByTestId('sidebar-settings')).toBeTruthy();
-        expect(screen.getByTestId('sidebar-status').textContent).toBe('idle');
-        // ...and it is the ONLY settings-shaped thing on screen: the aside renders its
-        // quiet panel for that tab instead of StationSettings.
-        expect(screen.queryByTestId('settings-workspace')).toBeNull();
-        expect(screen.getByTestId('inspector-idle')).toBeTruthy();
+        // The rail is the conversation board (empty at startup, so the empty row is
+        // what proves it is the chat registry), and the aside is the matching readout of
+        // that (empty) conversation rather than the quiet panel.
+        expect(screen.getByTestId('empty-chat-list')).toBeTruthy();
+        expect(screen.getByTestId('new-chat-button')).toBeTruthy();
+        expect(screen.getByTestId('inspector-chat')).toBeTruthy();
+        // Nothing in the aside writes back: model, agent and mode each keep exactly one
+        // editor (the composer's strip, the header's dialog), so the readout's rows are
+        // text, not controls.
+        expect(document.querySelectorAll('[data-testid^="inspector-row-"] select')).toHaveLength(0);
+        expect(document.querySelectorAll('[data-testid^="inspector-row-"] input')).toHaveLength(0);
     });
 
     it('carries the skin with the public export, not only with the app entry', () => {

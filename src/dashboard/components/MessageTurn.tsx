@@ -3,11 +3,16 @@
 // BEHAVIOR ORACLE (read-only): src/components/ChatAssistantApp.tsx
 //   `renderMessages` 2007-2310 is the source of every rule reproduced here:
 //   - the attribution label in the row ABOVE the bubble IS the collapse toggle
-//     ("no chevron glyph ever renders"), and the label text is the producing
-//     model for an assistant turn that records one, otherwise the literal
-//     speaker ("user" / "system");
-//   - a collapsed turn shows the label plus a one-line FIRST-LINE preview
-//     stacked BELOW it (never inline); user stacks stay right-aligned;
+//     ("no chevron glyph ever renders"), and for an assistant turn its text NAMES THE
+//     MODEL that produced the reply — the recorded producing model, falling back to the
+//     model the surface is set to when the record carries none — rather than the generic
+//     "assistant" the role alone would give. Only a user/system row (or an assistant row
+//     with no model at all) shows the literal speaker;
+//   - a collapsed turn shows the label plus a one-line FIRST-LINE preview; the
+//     oracle stacked it BELOW the label, this surface folds it onto the SAME line
+//     (label pair left, preview filling the rest and truncating) — see the
+//     `.msg[data-collapsed='true'] .msg__lead` rule in styles/transcript.css;
+//     user stacks stay right-aligned;
 //   - the delete cross sits on the right of the header row and never renders for
 //     a system turn (the system prompt cannot be removed by message delete);
 //   - the copy/fork strip under the bubble exists only while the turn is
@@ -17,10 +22,16 @@
 //     floating row can never travel above its natural slot and cover the turn's
 //     own header (its delete "x").
 //
-// TEXT IS PLAIN TEXT. The body renders as one text node with
-// `white-space: pre-wrap; overflow-wrap: anywhere` (transcript.css). There is no
-// markdown pipeline here or in the oracle — a reply's characters are exactly what
-// appears, which is also what makes the contentEditable edit round-trip lossless.
+// USER AND SYSTEM TEXT IS PLAIN TEXT; AN ASSISTANT REPLY IS MARKDOWN. A user row and
+// the system prompt render as one text node with
+// `white-space: pre-wrap; overflow-wrap: anywhere` (transcript.css) — their
+// characters are exactly what was sent. An assistant reply is Markdown, so its body
+// goes through `markdownHtml` from @loadscript/harness (marked GFM → DOMPurify →
+// highlight.js, the client's own hardened renderer) and lands in a `.msg__markdown`
+// child of the SAME bubble; the typography and syntax colours live in
+// styles/markdown.css. Either way the EDITOR and the controls carry the raw text: the
+// contentEditable edit always opens on the source, which is what keeps the round-trip
+// lossless when a reply contains markup.
 //
 // EDIT STATE IS LIFTED, exactly like the oracle's `MessageListOptions`
 // (1806-1856): the parent (TranscriptStream) owns `editingIndex`, because "one
@@ -35,8 +46,13 @@
 // stage's single scroll container) on scroll/resize and flips `floating`. Only a
 // class changes — `position: sticky; bottom: 0` in transcript.css IS the pin —
 // so the float needs no inline style object.
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent, MouseEvent } from 'react';
+// The harness client's own Markdown renderer: marked (GFM) → DOMPurify → highlight.js,
+// with link hardening and an inert task-list checkbox. Model output is untrusted, so
+// the sanitize step is not optional and re-using the client's boundary keeps exactly
+// one of them in the product (styles/markdown.css documents the vocabulary it emits).
+import { markdownHtml, plainPreview } from '@loadscript/harness';
 import type { ChatMode, ChatRole, ChatTurn } from '../contract';
 import {
     CHAT_MESSAGE_COPY_COMMAND,
@@ -45,6 +61,7 @@ import {
     CHAT_MESSAGE_ROLE_COMMAND,
     CHAT_MESSAGE_UPDATE_COMMAND,
     CHAT_MODE_STATE,
+    CHAT_MODEL_STATE,
     CHAT_TURN_TOGGLE_COMMAND
 } from '../contract';
 import { useDashboardValue } from '../state-hooks';
@@ -206,6 +223,9 @@ export function MessageTurn({
     // online the harness cannot seed a new conversation from an existing history,
     // so the control is not rendered at all (see the fork button below).
     const mode = useDashboardValue<ChatMode>(CHAT_MODE_STATE);
+    // The model the surface is set to. It is the attribution FALLBACK for an assistant
+    // turn whose record carries no producing model — see `attributionId` below.
+    const selectedModel = useDashboardValue<string>(CHAT_MODEL_STATE);
     const { index, message, role, collapsed, model } = turn;
     // The host's flag OR the store's flag: either half opens the editor, so a
     // store-driven edit (from the aside) and a click in this list behave alike.
@@ -220,6 +240,31 @@ export function MessageTurn({
 
     const expanded = !collapsed;
     const controlsVisible = expanded && showControls;
+
+    // ——— rendered body ————————————————————————————————————————————————————
+    // Only the assistant's reply is Markdown: a user message and the system prompt are
+    // verbatim records of what was sent, and re-formatting them would misstate them.
+    // The parse is memoised because the sticky gate re-renders this row on a scroll
+    // tick and a streamed reply re-renders it per token — `markdownHtml`
+    // (marked → DOMPurify → highlight.js) should run when the TEXT changed, not when
+    // the controls strip floated.
+    const formatted = role === 'assistant';
+    const bodyHtml = useMemo(
+        // marked ends every block it emits with a newline, so the sanitized string
+        // carries a trailing whitespace text node. Trimming is the only edit made to
+        // the HTML: it lands OUTSIDE every tag (blocks, never inline runs), and it
+        // keeps the bubble's text exactly the reply's text — no phantom line for a
+        // selection, a screen reader or a text assertion to trip over.
+        () => (formatted && expanded && !editing ? markdownHtml(message.content).trim() : ''),
+        [formatted, expanded, editing, message.content]
+    );
+    // A collapsed row previews the content's first line. In a Markdown reply the
+    // markers of that line (`**`, backticks, table pipes) are noise in a one-line
+    // label, so they come off; the raw text is what the editor and the copy control
+    // still carry.
+    const previewText = formatted
+        ? plainPreview(message.content.split('\n')[0])
+        : message.content.split('\n')[0];
 
     // ——— measured sticky gate —————————————————————————————————————————————
     const turnRef = useRef<HTMLLIElement | null>(null);
@@ -248,11 +293,19 @@ export function MessageTurn({
         onEditEnd?.();
     };
 
-    // Attribution: the producing model's display label for an assistant turn that
-    // records one, the literal role otherwise (oracle 2109-2118). A turn with an
-    // empty `model` (user/system rows, older records) never renders '' as a label.
-    const attributed = role === 'assistant' && model !== '';
-    const speakerLabel = attributed ? labelFor(model) : role;
+    // Attribution: the producing model's display label for an assistant turn (oracle
+    // 2109-2118), so the row answers "which model said this" instead of restating the
+    // role. A record that carries no producing model — a local/offline reply, or an older
+    // row whose wire message has no `model` field — is still a MODEL's answer, so it takes
+    // the model the surface is set to, `chat.model`: the same value the in-flight row
+    // already prints for the reply it is streaming (./TranscriptStream.tsx's
+    // `streaming-message-model`), for the same reason — the send owns that cell for the
+    // turn it produced. Only a row with NEITHER (a user/system turn, or an assistant turn
+    // while no model is selected) falls back to the literal role, and no row ever renders
+    // '' as a label.
+    const attributionId = role === 'assistant' ? (model !== '' ? model : selectedModel) : '';
+    const attributed = attributionId !== '';
+    const speakerLabel = attributed ? labelFor(attributionId) : role;
     const alignRight = role === 'user';
     // The bubble is only a click target while an edit could start (the affordance
     // and the cursor hint must agree — oracle 2090-2102).
@@ -308,9 +361,11 @@ export function MessageTurn({
                         </button>
                     ) : null}
                     {collapsed ? (
-                        // The collapsed "message": the first line stacked BELOW
-                        // the label; clicking it expands the turn (there is no
-                        // chevron to click).
+                        // The collapsed "message": the content's first line, on the
+                        // label's OWN line — it fills the rest of the header row and
+                        // ellipsizes (rules: `.msg[data-collapsed='true'] .msg__lead`
+                        // and `.msg__preview` in styles/transcript.css). Clicking it
+                        // expands the turn (there is no chevron to click).
                         <button
                             type="button"
                             className="msg__preview"
@@ -319,7 +374,7 @@ export function MessageTurn({
                             data-testid={`message-preview-${index}`}
                             onClick={toggle}
                         >
-                            {message.content.split('\n')[0]}
+                            {previewText}
                         </button>
                     ) : null}
                 </div>
@@ -376,7 +431,20 @@ export function MessageTurn({
                             if (canEdit) onEditStart?.(index, null);
                         }}
                     >
-                        {message.content}
+                        {/* The sanitized HTML goes in a child of the SAME bubble, so the
+                            click-to-edit affordance, the testid and the role rail all stay
+                            exactly where the suite and the skin expect them. The wrapper is
+                            the hook styles/markdown.css hangs every typographic rule on,
+                            and it is also what turns the bubble's `pre-wrap` back off —
+                            markup between tags must not paint as blank lines. */}
+                        {formatted ? (
+                            <div
+                                className="msg__markdown"
+                                dangerouslySetInnerHTML={{ __html: bodyHtml }}
+                            />
+                        ) : (
+                            message.content
+                        )}
                     </div>
                 )
             ) : null}

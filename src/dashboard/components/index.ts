@@ -118,7 +118,11 @@ export { ToolInspector, toolKindLabel } from './ToolInspector';
 
 // ——— the inspector column (T6) —————————————————————————————————————————————————
 // ChatInspector is the aside channel's contribution: it switches on
-// `chat.sidebarTab` and renders one of the four surfaces above (or the quiet panel
-// for the Chat tab). It is exported here so `plugins/surfaces.ts` — the only place
-// the plugin layer imports a component — has one import path for the whole station.
+// `chat.sidebarTab` and renders one of the four surfaces above (the conversation
+// readout for the Chat tab, the quiet panel for the Settings tab). It is exported
+// here so `plugins/surfaces.ts` — the only place the plugin layer imports a component
+// — has one import path for the whole station. ConversationInspector is exported
+// separately because it is a surface in its own right (own file, own test file), not
+// because ChatInspector needs it: the switch above imports it by path.
 export { ChatInspector } from './ChatInspector';
+export { ConversationInspector } from './ConversationInspector';

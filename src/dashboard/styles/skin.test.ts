@@ -40,6 +40,18 @@ const readSkin = (name: string): string => readFileSync(join(SKIN_DIR, name), 'u
 const declarationsOf = (name: string): string => readSkin(name).replace(/\/\*[\s\S]*?\*\//g, '');
 
 /**
+ * A component file with its comments removed, for exactly the reason `declarationsOf`
+ * strips a stylesheet's: this skin records every removed piece of vocabulary in prose, and
+ * that prose must not decide an assertion about the code that renders it. A JSX comment is a
+ * `{/* … *\/}` block, so the pattern below erases the body and leaves the braces behind;
+ * whole-line `//` comments go with it.
+ */
+const markupOf = (name: string): string =>
+    readFileSync(join(SKIN_DIR, '..', 'components', name), 'utf-8')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/^\s*\/\/.*$/gm, '');
+
+/**
  * Every NARROW-layout flip one stylesheet declares, i.e. the px values inside a
  * `@media (max-width: ...)`. Deliberately not a bare `max-width:` scan: a measure
  * cap (settings.css `.settings { max-width: 520px }`) or a text ellipsis bound
@@ -106,6 +118,8 @@ describe('the skin agrees with the viewport seam', () => {
             'base.css',
             'composer.css',
             'index.css',
+            'inspector.css',
+            'markdown.css',
             'notices.css',
             'sessions.css',
             'settings.css',
@@ -128,6 +142,8 @@ describe('the skin agrees with the viewport seam', () => {
             'base.css': [WIDE_SQUEEZE, narrow],
             'composer.css': [narrow],
             'index.css': [],
+            'inspector.css': [],
+            'markdown.css': [],
             'notices.css': [narrow],
             'sessions.css': [narrow],
             'settings.css': [narrow],
@@ -164,7 +180,6 @@ describe('the skin agrees with the viewport seam', () => {
                 '.station',
                 ".station[data-density='compact']",
                 '.station .inspector',
-                '.station .inspector__menu',
                 '.station .inspector__scrim',
                 ".station .inspector[data-open='true']",
                 ".station[data-theme='slate']",
@@ -208,16 +223,32 @@ describe('the skin agrees with the viewport seam', () => {
         // with its own auto margin (the chip row's margin is the pre-existing pair).
         expect(rules['.station__actions']).toBeUndefined();
 
-        // THE RIGHT DRAWER: the aside mirrors the rail — off the right edge, a full
-        // viewport scrim, the same 160ms transform language, literal z-index pair.
-        expect(rules['.station .inspector']).toContain('transform: translateX(105%)');
+        // THE INSPECTOR DRAWER opens off the LEFT edge — the rail's side — so it
+        // mirrors the rail exactly: same edge, same `-105%` travel, same 160ms
+        // transform language, same literal z-index pair, plus a full-viewport scrim.
+        expect(rules['.station .inspector']).toContain('left: 0');
+        expect(rules['.station .inspector']).toContain('border-right: 1px solid var(--line)');
+        expect(rules['.station .inspector']).toContain('transform: translateX(-105%)');
         expect(rules['.station .inspector']).toContain('transition: transform 160ms ease');
         expect(rules['.station .inspector']).toContain('z-index: 20');
-        expect(rules['.station .inspector']).toContain('padding-top: calc(var(--mobile-bar) + var(--pad))');
+        // NO RESERVED TOP BAND: the drawer starts under the one-line bar
+        // (`--mobile-bar`, the same measure the bar's own `min-height` reads) instead
+        // of running beneath it behind a run of empty `padding-top`, which is what the
+        // rail pays for its floating corner control. The `--pad` ring stays even.
+        expect(rules['.station .inspector']).toContain('inset-block: var(--mobile-bar) 0');
+        expect(rules['.station .inspector']).not.toContain('padding-top');
+        expect(rules['.station .inspector']).toContain('padding: var(--pad)');
+        // The edge it used to hang from may not come back beside the new one: a stale
+        // `right: 0`/`border-left` pair would make the panel a fixed-position box with
+        // BOTH insets set, which stretches it across the viewport instead of sliding.
+        expect(rules['.station .inspector']).not.toContain('right: 0');
+        expect(rules['.station .inspector']).not.toContain('border-left');
         expect(rules['.station .inspector__scrim']).toContain('inset: 0');
         expect(rules['.station .inspector__scrim']).toContain('z-index: 10');
-        expect(rules['.station .inspector__menu']).toContain('right: 8px');
-        expect(rules['.station .inspector__menu']).toContain('z-index: 30');
+        // THE DRAWER HAS NO CORNER CONTROL: the phone's only rules for this column are the
+        // panel and its dismiss target. `.inspector__menu` is pinned out of the sheet (and
+        // out of the markup) by the describe below, and what replaced it by the composer's.
+        expect(rules['.station .inspector__menu']).toBeUndefined();
 
         // THE LEFT DRAWER: the rail's control is pinned to the bar's opposite corner
         // and sits ABOVE the open panel, so the same corner closes it; the panel
@@ -235,10 +266,21 @@ describe('the skin agrees with the viewport seam', () => {
         const footer = narrowBlockIn(readSkin('composer.css'), 899);
         expect(footer['.station .composer']).toContain('border-top: 1px solid var(--line)');
         expect(footer['.station .composer']).toContain('padding: 6px 6px calc(6px + env(safe-area-inset-bottom');
-        // The counter is now the ONLY chrome the phone hides. The keyboard hint shared
-        // this rule (`'.station .composer__help, .station .composer__usage'`) went with
-        // the element itself, so the selector names one element and the old pair is gone.
-        expect(footer['.station .composer__usage']).toBe('display: none');
+        // THE METADATA LINE IS THE DESKTOP'S, NOT A PHONE VARIANT of it: one line
+        // (`nowrap`), the two pickers as content-width tracks side by side, and the
+        // count still flush right on its `margin-left: auto`. `flex: 1 1 0` on the
+        // pickers — the revision this replaces — grew each track to half the bar and
+        // spread the two labels to opposite edges; the `display: none` on the counter
+        // (which the keyboard hint used to share, hence the dead pair below) removed
+        // the count the desktop shows. Neither rule may come back.
+        expect(footer['.station .composer__row']).toBe('flex-wrap: nowrap');
+        expect(footer['.station .composer__pick']).toBeUndefined();
+        // ONE phone-only declaration is allowed on the counter, and it is not a layout
+        // one: `cursor: pointer`, because below this seam the element is the inspector
+        // drawer's control (the aside's corner chevron is gone, and the composer describes
+        // the swap). A `display`/`margin`/`order` variant here would put a second metadata
+        // design on the phone, which is what the paragraph above forbids.
+        expect(footer['.station .composer__usage']).toBe('cursor: pointer');
         expect(footer['.station .composer__help, .station .composer__usage']).toBeUndefined();
 
         // `viewport-fit=cover` is what makes every `env(safe-area-inset-*)` above
@@ -271,6 +313,30 @@ describe('the composer metadata line: pickers left, token count right', () => {
         // gone, so a rule for it would be dead weight: the class may not appear in this
         // stylesheet at all, in either layout.
         expect(readSkin('composer.css')).not.toContain('composer__help');
+    });
+});
+
+describe('the rail opens on its content, not on a caption', () => {
+    // The sidebar column used to start with a head line reading "Rail" — the name of the
+    // layout slot, not of what is in it — one row above the board's own "Conversations"
+    // heading. The line is gone by request, so the sheet may not still style it and the
+    // component may not still emit it: the same two-sided pin the aside's chevron gets, for
+    // the same reason (a rule styling nothing is dead weight, an element with no rule is a
+    // UA default the skin never agreed to).
+    it('ships no `.rail__bar` / `.rail__label` rule, and no caption element', () => {
+        const source = declarationsOf('sessions.css');
+        expect(/\.rail__bar\s*\{/.test(source)).toBe(false);
+        expect(/\.rail__label\s*\{/.test(source)).toBe(false);
+
+        const markup = markupOf('ChatSidebar.tsx');
+        expect(markup).not.toContain('rail__bar');
+        expect(markup).not.toContain('rail__label');
+        expect(markup).not.toContain('>Rail<');
+
+        // What the column DOES start with keeps its rules: the board's heading + count, and
+        // the panel edge they sit on is `.rail`'s own `gap`, not a caption row.
+        expect(source).toContain('.station .rail__heading');
+        expect(source).toContain('.station .rail__heading-text');
     });
 });
 
@@ -347,6 +413,100 @@ describe('the single header title and its configuration dialog', () => {
         const source = declarationsOf('settings.css');
         expect(source).not.toContain('.station .swatches');
         expect(source).not.toContain('--swatch-size:');
+    });
+});
+
+describe('the aside column: no corner control at any width', () => {
+    // The drawer's toggle used to be a chevron this column pinned to the phone bar's
+    // top-right corner: `.inspector__menu btn btn--ghost btn--icon`, testid `aside-toggle`.
+    // `.btn--icon` sets `display: inline-flex`, so the desktop `display: none` had to be
+    // authored AFTER that primitive to win the cascade on equal specificity — written
+    // higher up the sheet, the primitive won, the glyph painted on desktop, and
+    // `.station__region > * { flex: 1 1 auto }` stretched it into a full-height block over
+    // the inspector column: the "huge chevron". The whole arrangement — rule, cascade gate,
+    // phone re-win — is gone by request. The composer's token counter is the drawer's
+    // control now (the case below pins what that costs the sheet). The stylesheet is text no
+    // render test can see, so the ABSENCE is pinned as text, in both layouts and in the
+    // markup that would have produced the element.
+    it('ships no inspector corner control, in either layout or in the markup', () => {
+        const source = declarationsOf('base.css');
+
+        // NO RULE ANYWHERE: neither the desktop layout nor the phone's declares the class.
+        expect(/\.inspector__menu\s*\{/.test(source)).toBe(false);
+        expect(narrowBlockIn(source, 899)['.station .inspector__menu']).toBeUndefined();
+
+        // AND NO ELEMENT: a re-added button that lost its rule would paint as a bare UA
+        // glyph in the corner, which is exactly the bug this column already shipped once.
+        // (Comments come out first — this file EXPLAINS the removal in prose that names the
+        // class and the testid, and prose must not decide an assertion about the render.)
+        const markup = markupOf('ChatInspector.tsx');
+        expect(markup).not.toContain('inspector__menu');
+        expect(markup).not.toContain('aside-toggle');
+
+        // THE RAIL KEEPS ITS CORNER CONTROL. Only the aside's glyph was removed, and the
+        // asymmetry is deliberate: a hamburger has no readout to double as a control.
+        expect(narrowBlockIn(readSkin('sessions.css'), 899)['.station .rail__menu']).toContain(
+            'z-index: 30'
+        );
+    });
+
+    it('makes the composer counter a real control, reset to read as metadata', () => {
+        const source = declarationsOf('composer.css');
+
+        // The counter became a <button>, so the sheet owes a RESET: a UA button brings a
+        // border, a background, padding, its own `font` and — on a mobile engine — native
+        // control styling, any of which would put a second piece of chrome on the ONE line
+        // the picker labels share. `margin: 0 0 0 auto` stays the first declaration, i.e.
+        // the alignment the case above pins is untouched.
+        const counter = /\.station \.composer__usage \{([^}]*)\}/.exec(source);
+        expect(counter).not.toBeNull();
+        const declarations = (counter?.[1] ?? '').replace(/\s+/g, ' ');
+        expect(declarations).toContain('margin: 0 0 0 auto');
+        for (const reset of [
+            'padding: 0',
+            'border: 0',
+            'appearance: none',
+            'background: none',
+            'font: inherit'
+        ]) {
+            expect(declarations).toContain(reset);
+        }
+
+        // CLICKABLE ONLY WHERE IT IS A CONTROL: the pointer appears in the 899 block and
+        // nowhere else, which is also why no hover rule is authored for it.
+        expect(narrowBlockIn(source, 899)['.station .composer__usage']).toBe('cursor: pointer');
+
+        // And visible to the keyboard. base.css's shared focus ring belongs to the
+        // `.btn`/`.field` primitives, which this element deliberately is NOT (a `.btn`
+        // carries a min-width and padding the metadata line cannot pay for).
+        expect(
+            /\.station \.composer__usage:focus-visible \{[^}]*outline: 2px solid var\(--accent\)/.test(
+                source
+            )
+        ).toBe(true);
+    });
+
+    it('styles the conversation readout in its own file, off the shell sheet', () => {
+        // The Chat tab's surface (ConversationInspector.tsx) is a feature surface, so
+        // its rules live in inspector.css, not in base.css's shell chrome — the same
+        // split agents.css / tools.css make for the other two tabs. The row markup the
+        // component emits is matched here, so a renamed class fails the skin rather
+        // than silently unstyling the column.
+        const source = declarationsOf('inspector.css');
+        for (const owned of [
+            '.station .inspector__state',
+            '.station .inspector__live',
+            '.station .inspector__rows',
+            '.station .inspector__row',
+            '.station .inspector__error'
+        ]) {
+            expect(source).toContain(owned);
+        }
+        // A readout row is label + value on one line, and the value breaks inside the
+        // 300px column instead of scrolling the region sideways.
+        expect(/\.station \.inspector__row dd \{[^}]*overflow-wrap: anywhere/.test(source)).toBe(true);
+        // base.css stays blind to the readout's own vocabulary.
+        expect(declarationsOf('base.css')).not.toContain('.inspector__rows');
     });
 });
 

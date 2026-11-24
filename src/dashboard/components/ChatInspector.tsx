@@ -10,22 +10,23 @@
 // call).
 //
 // THE FOUR CASES (contract.ts's `SidebarTab` vocabulary, exhaustive):
-//   'agent'    -> AgentWorkspace   (registry list + prompt editor + tool toggles)
-//   'tool'     -> ToolInspector    (registry grid + source editor)
+//   'agent'    -> AgentWorkspace     (registry list + prompt editor + tool toggles)
+//   'tool'     -> ToolInspector      (registry grid + source editor)
+//   'chat'     -> ConversationInspector (the rail's DEFAULT tab): the live phase of the
+//                 agentic run behind the transcript — `chat.status`, the queued user
+//                 turn, the partial reply — and the conversation's own detail (model,
+//                 agent, attached tools, token counters, transport, follow-output).
+//                 It replaced a quiet placeholder panel here: that panel assumed the
+//                 rail still had Settings-tab readouts to defer to, and the rail lost
+//                 its tabs, so the column was explaining itself instead of informing.
 //   'settings' -> the quiet panel below. It used to render StationSettings, and that
 //                 is exactly why it does not any more: the header's Settings dialog
 //                 (./SettingsDialog.tsx) is now the one configuration editor, and an
 //                 editable copy of the same mode/base controls here would put two
 //                 editors of one cell on screen at the same time. The rail's Settings
 //                 TAB is untouched — its read-only status readout (activity, turns,
-//                 model, tokens, follow-output) still belongs to ChatSidebar.
-//   'chat'     -> the same quiet panel: a conversation has no inspector. The
-//                 transcript's own details (usage, model, tokens) already live in the
-//                 composer's `token-usage` row and the rail's Settings tab, so
-//                 inventing a fourth conversation panel here would duplicate a
-//                 surface that already exists — the oracle's own aside equivalent
-//                 renders nothing for the Chat tab (its aside tabs are Agent /
-//                 Tool / Settings only).
+//                 model, tokens, follow-output) is what ConversationInspector carries
+//                 for the Chat tab now.
 //
 // WHY A WRAPPER RATHER THAN THREE CONTRIBUTIONS: the shell keeps the LAST
 // contribution of a channel, so three contributions in `layout.aside` would leave
@@ -36,14 +37,23 @@
 // files' rules already size.
 //
 // THE PHONE DRAWER (R3, added with the mobile shell redesign): at or below 899px
-// this column is the station's SECOND off-canvas panel — the right-hand twin of the
-// rail's drawer — because a phone has no third column to give it. The open flag is
-// the core's `chat.asideOpen` cell (default false, and retracted on the crossing
-// back to desktop by the effect below, exactly as viewport.ts does for
-// `chat.drawerOpen`); the control, the scrim and the panel are emitted as a
-// fragment for the containing-block reason documented at the render site. Desktop
-// renders the same three lines it always did: the control is `display: none` there
-// and the scrim is never in the tree.
+// this column is the station's SECOND off-canvas panel — the twin of the rail's
+// drawer, and it opens off the SAME (left) edge, by request — because a phone has no
+// third column to give it. It no longer hangs from the right edge: `left: 0` +
+// `translateX(-105%)` (styles/base.css, `max-width: 899px`), and it starts BELOW the
+// one-line bar (`inset-block: var(--mobile-bar) 0`) rather than running under it
+// behind a run of empty `padding-top`, so the readout's head sits flush on the bar's
+// hairline instead of under a padding band. The open flag is the core's
+// `chat.asideOpen` cell (default false, and retracted on the crossing back
+// to desktop by the effect below, exactly as viewport.ts does for `chat.drawerOpen`).
+// ITS CONTROL IS NOT IN THIS FILE: the corner chevron the column used to pin to the
+// phone bar's top-right corner is gone by request, and the composer's token counter
+// (`token-usage`, ./ComposerDeck.tsx) is what opens the drawer — one line of copy doing
+// two jobs, instead of a bare glyph floating over the column. What is left here is the
+// scrim and the panel, as a FRAGMENT for the containing-block reason documented at the
+// render site; `aside-panel`'s id backs the composer's `aria-controls`, and ids are
+// document-global, so that reference crosses the region boundary legally. Desktop
+// renders the same static column it always did — the drawer flag is inert above the seam.
 import { useEffect } from 'react';
 import {
     CHAT_ASIDE_OPEN_STATE,
@@ -52,19 +62,20 @@ import {
 } from '../contract';import { useDashboardValue } from '../state-hooks';
 import { useWorkbench } from '../workbench';
 import { AgentWorkspace } from './AgentWorkspace';
+import { ConversationInspector } from './ConversationInspector';
 import { ToolInspector } from './ToolInspector';
 // The SAME seam the rail's drawer uses: 'mobile' below `(min-width: 900px)`, which
 // is exactly where styles/base.css turns this column into an off-canvas panel
 // (base.css:397 and the `.inspector` block inside it) and where the aside's
 // auto-close gate lives.
 import { useViewport } from '../viewport';
-import { ChevronRightIcon } from '../../icons';
 
 /**
  * The idle panel's copy — one place, so the wording stays consistent. `hint` is NOT
- * part of it: the hint line names the rail tab the column is following ('chat' or
- * 'settings'), which is the whole point of this column, and hardcoding one of the two
- * would state something false about the other.
+ * part of it: the hint line names the rail tab the column is following, and since the
+ * Chat tab grew a real surface (./ConversationInspector.tsx), the only tab left that
+ * lands here is 'settings' — the hint stays the cell value rather than a literal so a
+ * future tab that also has nothing to edit here prints its own name.
  */
 const IDLE = {
     title: 'Inspector',
@@ -78,11 +89,16 @@ const IDLE = {
 const surfaceFor = (tab: SidebarTab) => {
     if (tab === 'agent') return <AgentWorkspace />;
     if (tab === 'tool') return <ToolInspector />;
-    // 'settings' and 'chat' both land here. For 'settings' it is a deliberate hand-off
-    // (the header's dialog owns configuration, see the header note); for 'chat' it is
-    // the pre-existing quiet panel. Both reuse the shell's descriptor chrome classes
-    // (`.panel*`, styles/base.css:218-258) because that is exactly the state they were
-    // built for — a column with a title and nothing registered in it.
+    // 'chat' is the conversation readout (./ConversationInspector): the live phase of
+    // the agentic run behind the transcript plus the session's model / agent / tool /
+    // token detail. It is the rail's DEFAULT tab, so it is what the column shows on
+    // every normal visit, and the numbers it prints are the ones the rail's Settings
+    // tab used to carry before the rail lost its tabs.
+    if (tab === 'chat') return <ConversationInspector />;
+    // 'settings' lands here: a deliberate hand-off to the header's dialog (see the
+    // header note). It reuses the shell's descriptor chrome classes (`.panel*`,
+    // styles/base.css:218-258) because that is exactly the state they were built for —
+    // a column with a title and nothing registered in it.
     return (
         <section className="panel" data-testid="inspector-idle" aria-label="Inspector">
             <header className="panel__head">
@@ -131,30 +147,19 @@ export function ChatInspector() {
 
     return (
         /* THE MOBILE SHAPE, identical in kind to the rail's (see ChatSidebar): a
-           FRAGMENT of control, scrim, panel. The control and the scrim must be
-           SIBLINGS of `.inspector`, never children — the panel carries
-           `transform: translateX(105%)` (styles/base.css), and a transformed box is
-           the containing block of its fixed descendants, which would slide the
-           control off-screen with the panel. Above the 900px seam the control is
-           `display: none`, the scrim is never rendered, and the fragment's only
-           box is the static column the desktop grid always rendered. */
+           FRAGMENT of scrim, panel. The scrim has to be a SIBLING of `.inspector`,
+           never a child — the panel carries `transform: translateX(-105%)`
+           (styles/base.css), and a transformed box is the containing block of its
+           fixed descendants, which would slide the scrim off-screen with the panel.
+           Above the 900px seam the scrim is never rendered at all, and the fragment's
+           only box is the static column the desktop grid always rendered.
+           NO TOGGLE IN THIS TREE. The drawer's control is the composer's token counter
+           (`token-usage`, ./ComposerDeck.tsx): it lives in the stage region, writes the
+           same `chat.asideOpen` cell, and `aria-controls` this panel's id. The corner
+           chevron that used to be pinned above the column is gone. The scrim is
+           therefore the dismiss target: while the drawer is open it covers the viewport
+           — the counter included — so a tap anywhere off the panel shuts it. */
         <>
-            <button
-                type="button"
-                className="inspector__menu btn btn--ghost btn--icon"
-                aria-expanded={asideOpen}
-                aria-controls="aside-panel"
-                aria-label="Toggle inspector"
-                data-testid="aside-toggle"
-                onClick={() =>
-                    instance.state<boolean>(CHAT_ASIDE_OPEN_STATE).set(!asideOpen)
-                }
-            >
-                {/* The right-hand twin of the rail's MenuIcon: a chevron pointing at
-                    the edge the panel slides out of. */}
-                <ChevronRightIcon size={16} />
-            </button>
-
             {/* Scrim BEFORE the panel in DOM order, like the rail's: the drawer
                 paints above its own dismiss target (z 20 over z 10 in base.css), and
                 the scrim only exists to close it. */}
@@ -170,8 +175,9 @@ export function ChatInspector() {
 
             <div
                 className="inspector"
-                // `id` backs the toggle's `aria-controls` above — the reference has
-                // to resolve to a real element or the ARIA relationship is dead.
+                // `id` backs the composer counter's `aria-controls` (./ComposerDeck.tsx) —
+                // the reference has to resolve to a real element, or the ARIA relationship
+                // across the two regions is dead.
                 id="aside-panel"
                 // `data-open` is inert above the seam (the panel is a static column
                 // there), exactly like the rail's.

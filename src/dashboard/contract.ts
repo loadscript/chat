@@ -60,13 +60,37 @@
 // The bar's chip row is the STATUS_SLOT contributions and renders only when a plugin
 // contributes one; the version moved out of a chip and into the title.
 //
+// INSPECTOR EXTRAS (feature-owned, components/ChatInspector.tsx + ConversationInspector.tsx):
+//   inspector-idle                 the quiet panel the Settings tab renders
+//   inspector-chat                 the Chat tab's conversation readout (the panel
+//                                  inside `aside-panel`, i.e. the default view)
+//   inspector-activity             its head line: the live `chat.status` phase, as a
+//                                  WORD plus a colour, never colour alone
+//   inspector-live                 the work-in-flight block (`chat.status` /
+//   inspector-pending              `chat.pending` / `chat.streaming`)
+//   inspector-streaming            the partial reply's length
+//   inspector-error                the surfaced `chat.error` line
+//   inspector-row-{key}            one readout row, {key} in session | id | messages |
+//                                  model | agent | tools | mode | prompt-tokens |
+//                                  reply-tokens | total-tokens | follow | voice
+//                                  (`id` renders only while a conversation is open)
+//
 // MOBILE DRAWER EXTRAS (feature-owned, below the 900px seam; see viewport.ts):
 //   sidebar-toggle | sidebar-scrim   the rail's control + dismiss target
-//   aside-toggle   | aside-scrim     the inspector's control + dismiss target
-// The two toggles are fixed to the phone bar's corners (styles/base.css owns the
-// one-line bar, sessions.css and base.css own the drawers), so they never nest
-// inside a transformed drawer — a `position: fixed` child of a translated panel
-// rides the panel and would slide off-screen with it.
+//   token-usage    | aside-scrim     the inspector's control + dismiss target. Its
+//                                    control is the composer's `<count> Tokens`
+//                                    element (components/ComposerDeck.tsx — the same
+//                                    node prints the count, so no separate testid
+//                                    names the toggle), NOT a glyph in the aside
+//                                    column; the chevron that used to sit there
+//                                    (`aside-toggle`) is gone. Above the seam the
+//                                    element is `disabled`, i.e. a plain readout.
+// The rail's toggle is fixed to the phone bar's top-left corner (styles/base.css owns
+// the one-line bar, sessions.css and base.css own the drawers), so it never nests
+// inside a transformed drawer — a `position: fixed` child of a translated panel rides
+// the panel and would slide off-screen with it. The inspector's control needs no such
+// treatment: it sits in the stage's footer in normal flow, and the aside's scrim (z 10,
+// under the open panel's z 20) covers it, which is what shuts the drawer again.
 // ---------------------------------------------------------------------------
 import type { ComponentType, ReactNode } from 'react';
 // Type-only import of the core's cell handle: erased at build time, and it is
